@@ -19,7 +19,7 @@ function MomentsPage() {
   });
 
   return (
-    <main className="mx-auto max-w-xl px-5 pb-12 animate-fade-in">
+    <main className="mx-auto max-w-6xl px-6 pb-12 sm:px-8 animate-fade-in">
       <Link
         to="/"
         className="mb-4 inline-flex min-h-[40px] items-center gap-2 text-sm text-muted-foreground hover:text-primary"

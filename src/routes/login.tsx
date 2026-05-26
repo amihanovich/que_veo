@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Sparkles, Loader2, ArrowLeft } from "lucide-react";
+import { Sparkles, Loader2, ArrowLeft, Heart, Bookmark, TrendingUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/login")({
@@ -18,7 +18,6 @@ function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
-  // Si ya está logueado, ir a home
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) navigate({ to: "/" });
@@ -74,18 +73,37 @@ function LoginPage() {
         >
           <ArrowLeft className="h-3.5 w-3.5" /> Volver al inicio
         </Link>
-        <div className="mb-8 text-center">
+        <div className="mb-6 text-center">
           <div className="mb-3 inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
             <Sparkles className="h-3.5 w-3.5 text-primary" />
             ¿Qué Veo?
           </div>
           <h1 className="text-3xl font-bold text-foreground">
-            {mode === "signin" ? "Ingresá" : "Crear cuenta"}
+            {mode === "signin" ? "Bienvenido de vuelta" : "Guardá tu perfil de gusto"}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Opcional. Te sirve para guardar tus Momentos y plataformas en cualquier dispositivo.
+            {mode === "signin"
+              ? "Ingresá para recuperar tus Momentos y plataformas."
+              : "Para que las recomendaciones se vuelvan tuyas. Sin emails de marketing, sin compartir datos."}
           </p>
         </div>
+
+        {mode === "signup" && (
+          <ul className="mb-6 space-y-2.5 rounded-2xl border border-border/60 bg-card/40 p-4">
+            <li className="flex items-start gap-2.5 text-xs text-muted-foreground">
+              <Heart className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+              <span><span className="font-medium text-foreground">Aprende qué te gusta</span> — cada 👍 ❤️ afina las recos.</span>
+            </li>
+            <li className="flex items-start gap-2.5 text-xs text-muted-foreground">
+              <Bookmark className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+              <span><span className="font-medium text-foreground">Sincroniza tus Momentos</span> en cualquier dispositivo.</span>
+            </li>
+            <li className="flex items-start gap-2.5 text-xs text-muted-foreground">
+              <TrendingUp className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+              <span><span className="font-medium text-foreground">Mejora con cada uso</span> — patrones y horarios tuyos.</span>
+            </li>
+          </ul>
+        )}
 
         <button
           onClick={handleGoogle}
@@ -165,10 +183,10 @@ function LoginPage() {
           onClick={() => navigate({ to: "/" })}
           className="flex min-h-[48px] w-full items-center justify-center rounded-2xl border border-dashed border-border bg-transparent px-6 text-sm font-medium text-muted-foreground transition-smooth hover:border-primary hover:text-primary"
         >
-          Continuar como invitado
+          Seguir como invitado
         </button>
         <p className="mt-2 text-center text-[11px] text-muted-foreground">
-          Sin guardar Momentos ni plataformas entre dispositivos.
+          Podés crear tu cuenta más tarde si querés.
         </p>
       </div>
     </main>

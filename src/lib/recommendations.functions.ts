@@ -127,6 +127,7 @@ const filtersInputSchema = z.object({
   source: z.enum(["filters", "moment"]).default("filters"),
   extraText: z.string().max(500).optional().nullable(),
   excludeTitles: z.array(z.string().min(1).max(200)).max(40).optional().default([]),
+  profileSeed: z.string().max(500).optional().nullable(),
 });
 
 function buildTasteLine(taste: TasteSnapshot | null): string {
@@ -174,6 +175,8 @@ export const recommendFromFilters = createServerFn({ method: "POST" })
         ? `\n\nTítulos a excluir (ya vistos o descartados — NO los recomiendes):\n- ${excluded.join("\n- ")}`
         : "";
 
+    const seedLine = data.profileSeed ? `\n\n${data.profileSeed}` : "";
+
     const prompt = `${SYSTEM_BASE}
 
 Contexto temporal: ${data.contextHint}${envLine}
@@ -185,7 +188,7 @@ Pedido del usuario (filtros):
 - Tipo: ${fmt(data.type)}
 - Atención: ${fmt(data.attention ?? null)}
 - Novedad: ${fmt(data.novelty ?? null)}
-- Plataformas disponibles: ${data.platforms.join(", ")}${extra}${tasteLine}${excludeLine}
+- Plataformas disponibles: ${data.platforms.join(", ")}${extra}${tasteLine}${seedLine}${excludeLine}
 
 Recuerda: "platform" debe ser EXACTAMENTE una de: ${data.platforms.join(", ")}.`;
 
@@ -222,6 +225,7 @@ const textInputSchema = z.object({
   seasonHint: z.string().max(80).optional().nullable(),
   weatherHint: z.string().max(120).optional().nullable(),
   excludeTitles: z.array(z.string().min(1).max(200)).max(40).optional().default([]),
+  profileSeed: z.string().max(500).optional().nullable(),
 });
 
 export const recommendFromText = createServerFn({ method: "POST" })
@@ -254,6 +258,8 @@ export const recommendFromText = createServerFn({ method: "POST" })
         ? `\n\nTítulos a excluir (ya vistos o descartados — NO los recomiendes):\n- ${excluded.join("\n- ")}`
         : "";
 
+    const seedLine = data.profileSeed ? `\n\n${data.profileSeed}` : "";
+
     const prompt = `${SYSTEM_BASE}
 
 Contexto temporal: ${data.contextHint}${envLine}
@@ -263,7 +269,7 @@ Plataformas disponibles del usuario: ${data.platforms.join(", ")}
 El usuario describió libremente lo que quiere ver:
 """
 ${data.text}
-"""${tasteLine}${excludeLine}
+"""${tasteLine}${seedLine}${excludeLine}
 
 Tu tarea:
 1. Inferir del texto: tiempo aproximado, compañía, mood, tipo, nivel de atención y novedad. Si algo no está claro, deducí lo más razonable según el contexto.
@@ -304,10 +310,10 @@ const inferInputSchema = z.object({
 export const inferMomentFilters = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => inferInputSchema.parse(data))
   .handler(async ({ data }) => {
-    const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) throw new Error("Falta LOVABLE_API_KEY en el servidor.");
-    const gateway = createLovableAiGatewayProvider(apiKey);
-    const model = gateway("google/gemini-3-flash-preview");
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) throw new Error("Falta ANTHROPIC_API_KEY en el servidor.");
+    const provider = createAiProvider(apiKey);
+    const model = provider("claude-haiku-4-5-20251001");
 
     const prompt = `Eres un asistente que traduce la descripción de una situación recurrente de ver streaming a filtros estructurados.
 
