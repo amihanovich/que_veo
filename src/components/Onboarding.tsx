@@ -70,7 +70,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                 ¿En qué rango de edad estás?
               </h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                Nos ayuda con las referencias culturales (no se comparte).
+                Nos ayuda con las referencias culturales. Opcional — no se comparte.
               </p>
               <div className="mt-4 grid gap-2">
                 {AGE_OPTIONS.map((opt) => {
@@ -104,15 +104,9 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                 </button>
                 <button
                   onClick={() => setStep(2)}
-                  disabled={!age}
-                  className={cn(
-                    "inline-flex min-h-[44px] items-center gap-1.5 rounded-full px-5 text-sm font-semibold transition-smooth",
-                    age
-                      ? "bg-gradient-primary text-primary-foreground shadow-primary active:scale-95"
-                      : "cursor-not-allowed bg-background text-muted-foreground",
-                  )}
+                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full bg-gradient-primary px-5 text-sm font-semibold text-primary-foreground shadow-primary transition-smooth active:scale-95"
                 >
-                  Siguiente
+                  {age ? "Siguiente" : "Saltar este paso"}
                   <ArrowRight className="h-4 w-4" />
                 </button>
               </div>
