@@ -2199,7 +2199,7 @@ function IconFeedbackRow({
 
   const btnSize = compact ? "p-2" : "p-2.5";
   const iconSize = compact ? "h-4 w-4" : "h-5 w-5";
-  const labelSize = compact ? "text-[9px]" : "text-[10px]";
+  const labelSize = compact ? "text-[10px]" : "text-[11px]";
 
   return (
     <div className="flex items-start justify-around gap-2">
