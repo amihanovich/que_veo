@@ -21,7 +21,7 @@ type ITunesResult = {
 type ITunesResponse = { results?: ITunesResult[] };
 
 function upscale(url: string): string {
-  return url.replace(/\/\d+x\d+bb\.(jpg|png|webp)$/i, "/600x600bb.jpg");
+  return url.replace(/\/\d+x\d+(bb)?\.(jpg|png|webp)$/i, "/600x600bb.jpg");
 }
 
 function isSeries(type: string): boolean {
@@ -48,12 +48,22 @@ async function searchOne(
       },
     });
     clearTimeout(timer);
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(`[posters] iTunes ${country}/${entity} "${title}" → HTTP ${res.status}`);
+      return null;
+    }
     const data = (await res.json()) as ITunesResponse;
     const art = data.results?.[0]?.artworkUrl100;
-    return art ? upscale(art) : null;
-  } catch {
+    if (art) {
+      const upscaled = upscale(art);
+      console.log(`[posters] ✓ "${title}" → ${upscaled}`);
+      return upscaled;
+    }
+    console.log(`[posters] ✗ "${title}" (${country}/${entity}) no results`);
+    return null;
+  } catch (e) {
     clearTimeout(timer);
+    console.warn(`[posters] fetch error "${title}" (${country}/${entity}):`, e);
     return null;
   }
 }
@@ -62,7 +72,7 @@ async function fetchPosterForTitle(title: string, type: string): Promise<string 
   const entity: "movie" | "tvShow" = isSeries(type) ? "tvShow" : "movie";
   const alt: "movie" | "tvShow" = entity === "movie" ? "tvShow" : "movie";
 
-  // Run all fallback searches in parallel instead of sequentially
+  // Run all fallback searches in parallel
   const [usMain, arMain, usAlt] = await Promise.all([
     searchOne(title, entity, "us"),
     searchOne(title, entity, "ar"),
