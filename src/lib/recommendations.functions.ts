@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { generateText } from "ai";
 import { z } from "zod";
-import { createLovableAiGatewayProvider } from "./ai-gateway";
+import { createAiProvider } from "./ai-gateway";
 import { getOptionalUser } from "@/lib/auth-optional";
 import { getTasteSnapshot, type TasteSnapshot } from "./feedback.functions";
 
@@ -140,11 +140,11 @@ function buildTasteLine(taste: TasteSnapshot | null): string {
 export const recommendFromFilters = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => filtersInputSchema.parse(data))
   .handler(async ({ data }) => {
-    const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) throw new Error("Falta LOVABLE_API_KEY en el servidor.");
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) throw new Error("Falta ANTHROPIC_API_KEY en el servidor.");
 
-    const gateway = createLovableAiGatewayProvider(apiKey);
-    const model = gateway("google/gemini-3-flash-preview");
+    const provider = createAiProvider(apiKey);
+    const model = provider("claude-haiku-4-5-20251001");
 
     const fmt = (v: string | null) => (v ?? "Elegí por mí (decide tú)");
 
@@ -227,11 +227,11 @@ const textInputSchema = z.object({
 export const recommendFromText = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => textInputSchema.parse(data))
   .handler(async ({ data }) => {
-    const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) throw new Error("Falta LOVABLE_API_KEY en el servidor.");
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) throw new Error("Falta ANTHROPIC_API_KEY en el servidor.");
 
-    const gateway = createLovableAiGatewayProvider(apiKey);
-    const model = gateway("google/gemini-3-flash-preview");
+    const provider = createAiProvider(apiKey);
+    const model = provider("claude-haiku-4-5-20251001");
 
     const envParts: string[] = [];
     if (data.seasonHint) envParts.push(`Estación: ${data.seasonHint}`);
