@@ -196,6 +196,10 @@ function HomePage() {
   const runText = async (excludeList: string[] = excluded, textOverride?: string) => {
     const text = (textOverride ?? freeText).trim();
     if (text.length < 3) return;
+    if (isGuest && readGuestSeed().searchCount >= 15) {
+      setShowLoginNudge(true);
+      return;
+    }
     const plats =
       effectivePlatforms.length > 0 ? effectivePlatforms : (PLATFORM_OPTIONS as Platform[]);
     setError(null);
@@ -233,6 +237,10 @@ function HomePage() {
     extraText?: string,
     excludeList: string[] = excluded,
   ) => {
+    if (isGuest && readGuestSeed().searchCount >= 15) {
+      setShowLoginNudge(true);
+      return;
+    }
     const f = overrideFilters ?? filters;
     let plats = (f.platforms.length > 0 ? f.platforms : defaultPlatforms) as Platform[];
     if (plats.length === 0) plats = PLATFORM_OPTIONS as Platform[];
@@ -886,7 +894,7 @@ function HomeScreen({
                           className="h-1.5 w-1.5 rounded-full"
                           style={{ background: colorForPlatform(p) }}
                         />
-                        {p}
+                        {p === "Star+" ? "Star+ (Disney+)" : p}
                       </button>
                     );
                   })}
@@ -1268,6 +1276,9 @@ function ResultsScreen({
               allowFeedback={!isGuestForFeedback}
               onWantToWatch={() => setMomentoPopupRec(visibleMain)}
             />
+            <p className="mt-2 text-center text-[11px] text-muted-foreground/50">
+              Verificá disponibilidad en tu plataforma — el catálogo puede variar.
+            </p>
           </div>
 
           <div className="order-3 md:order-3">

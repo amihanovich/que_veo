@@ -150,7 +150,7 @@ export const detectPattern = createServerFn({ method: "GET" })
       .gte("created_at", since)
       .limit(200);
 
-    if (!history || history.length < 3) return { suggestion: null };
+    if (!history || history.length < 2) return { suggestion: null };
 
     const counts = new Map<string, { count: number; row: any }>();
     for (const row of history) {
@@ -168,7 +168,7 @@ export const detectPattern = createServerFn({ method: "GET" })
 
     let top: { count: number; row: any } | null = null;
     for (const entry of counts.values()) {
-      if (entry.count >= 3 && (!top || entry.count > top.count)) top = entry;
+      if (entry.count >= 2 && (!top || entry.count > top.count)) top = entry;
     }
     if (!top) return { suggestion: null };
 
