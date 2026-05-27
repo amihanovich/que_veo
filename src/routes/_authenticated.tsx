@@ -77,10 +77,14 @@ function AuthLayout() {
   return (
     <div className="min-h-screen">
       <header className="mx-auto flex max-w-6xl items-center justify-between px-6 pt-6 pb-2 sm:px-8">
-        <Link to="/" className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
-          <Sparkles className="h-4 w-4 text-primary" />
+        <Link
+          to="/"
+          onClick={() => window.dispatchEvent(new CustomEvent("que-veo:go-home"))}
+          className="inline-flex items-center gap-2 text-lg font-bold text-foreground"
+        >
+          <Sparkles className="h-5 w-5 text-primary" />
           ¿Qué Veo?
-          <span className="ml-2 text-xs font-normal capitalize text-muted-foreground">
+          <span className="ml-1 text-xs font-normal capitalize text-muted-foreground">
             · {label}
           </span>
         </Link>

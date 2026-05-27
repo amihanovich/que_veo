@@ -101,6 +101,12 @@ function HomePage() {
       .finally(() => setPostersLoading(false));
   };
 
+  useEffect(() => {
+    const handler = () => { setStep("home"); setResults(null); };
+    window.addEventListener("que-veo:go-home", handler);
+    return () => window.removeEventListener("que-veo:go-home", handler);
+  }, []);
+
   const [session, setSession] = useState<Session | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   useEffect(() => {
@@ -1078,7 +1084,7 @@ function ResultsScreen({
       <header className="mb-6 flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <h1 className="font-display text-3xl font-bold leading-tight tracking-tight text-foreground sm:text-4xl">
-            ¿Qué <span className="text-primary">vemos hoy</span>?
+            Elegimos esto <span className="text-primary">para vos</span>
           </h1>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
