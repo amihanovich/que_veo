@@ -194,11 +194,6 @@ function HomePage() {
   const runText = async (excludeList: string[] = excluded, textOverride?: string) => {
     const text = (textOverride ?? freeText).trim();
     if (text.length < 3) return;
-    if (isGuest && readGuestSeed().searchCount >= 15) {
-      setShowLoginNudge(true);
-      toast("Límite de búsquedas alcanzado. Creá una cuenta para continuar.", { duration: 4000 });
-      return;
-    }
     const plats =
       effectivePlatforms.length > 0 ? effectivePlatforms : (PLATFORM_OPTIONS as Platform[]);
     setError(null);
@@ -238,11 +233,6 @@ function HomePage() {
     extraText?: string,
     excludeList: string[] = excluded,
   ) => {
-    if (isGuest && readGuestSeed().searchCount >= 15) {
-      setShowLoginNudge(true);
-      toast("Límite de búsquedas alcanzado. Creá una cuenta para continuar.", { duration: 4000 });
-      return;
-    }
     const f = overrideFilters ?? filters;
     let plats = (f.platforms.length > 0 ? f.platforms : defaultPlatforms) as Platform[];
     if (plats.length === 0) plats = PLATFORM_OPTIONS as Platform[];
