@@ -1702,7 +1702,7 @@ function MainCard({
         </span>
       </div>
 
-      <div className="relative aspect-[2/3] w-full overflow-hidden bg-muted/40">
+      <div className="relative h-[160px] w-full overflow-hidden bg-muted/40">
         {posterLoading && !posterUrl ? (
           <div className="h-full w-full animate-pulse bg-muted/40" />
         ) : posterUrl ? (
@@ -1710,46 +1710,43 @@ function MainCard({
             src={posterUrl}
             alt={`Portada de ${rec.title}`}
             loading="lazy"
-            className="h-full w-full object-cover"
+            className="h-full w-full object-cover object-top"
           />
         ) : (
           <div
-            className="flex h-full w-full flex-col items-center justify-center gap-2 p-6 text-center"
+            className="flex h-full w-full flex-col items-center justify-center gap-2 p-4 text-center"
             style={{
               background: `linear-gradient(135deg, ${colorForPlatform(rec.platform)}33, ${colorForPlatform(rec.platform)}11)`,
             }}
           >
-            <Film className="h-12 w-12 text-foreground/40" />
-            <span className="text-sm font-semibold text-foreground/70 line-clamp-3">
-              {rec.title}
-            </span>
+            <Film className="h-8 w-8 text-foreground/40" />
           </div>
         )}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-card via-card/85 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-card via-card/85 to-transparent" />
       </div>
 
-      <div className="relative -mt-12 px-6 pb-6 pt-2">
+      <div className="relative px-5 pb-5 pt-3">
         <div className="mb-2 flex items-center gap-2">
           <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-primary">
             {rec.platform} · {rec.type}
           </span>
           <span className="text-[11px] text-muted-foreground">· {rec.duration}</span>
         </div>
-        <h2 className="font-display text-3xl font-bold leading-tight tracking-tight text-foreground">
+        <h2 className="font-display text-2xl font-bold leading-tight tracking-tight text-foreground">
           {rec.title}
         </h2>
-        <p className="mt-3 text-sm leading-relaxed text-foreground/80">{rec.reason}</p>
+        <p className="mt-2 text-sm leading-relaxed text-foreground/80 line-clamp-3">{rec.reason}</p>
 
         <button
           type="button"
           onClick={onWantToWatch}
-          className="mt-5 inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-gradient-primary px-6 text-sm font-bold text-primary-foreground shadow-primary transition-smooth hover:brightness-110 active:scale-[0.98]"
+          className="mt-4 inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-2xl bg-gradient-primary px-6 text-sm font-bold text-primary-foreground shadow-primary transition-smooth hover:brightness-110 active:scale-[0.98]"
         >
           <Play className="h-4 w-4 fill-current" />
           Quiero verla
         </button>
 
-        <div className="mt-5 border-t border-border/50 pt-4">
+        <div className="mt-4 border-t border-border/50 pt-3">
           <IconFeedbackRow
             feedback={feedback}
             onSeen={onSeen}
@@ -1789,7 +1786,7 @@ function AltCard({
 }) {
   return (
     <article className="group overflow-hidden rounded-3xl border border-border bg-card/40 transition-smooth hover:bg-card/70">
-      <div className="relative aspect-[2/3] w-full overflow-hidden bg-muted/40">
+      <div className="relative h-[120px] w-full overflow-hidden bg-muted/40">
         {posterLoading && !posterUrl ? (
           <div className="h-full w-full animate-pulse bg-muted/40" />
         ) : posterUrl ? (
@@ -1797,44 +1794,42 @@ function AltCard({
             src={posterUrl}
             alt={`Portada de ${rec.title}`}
             loading="lazy"
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+            className="h-full w-full object-cover object-top transition-transform duration-500 group-hover:scale-[1.03]"
           />
         ) : (
           <div
-            className="flex h-full w-full flex-col items-center justify-center gap-2 p-6 text-center"
+            className="flex h-full w-full items-center justify-center"
             style={{
               background: `linear-gradient(135deg, ${colorForPlatform(rec.platform)}33, ${colorForPlatform(rec.platform)}11)`,
             }}
           >
-            <Film className="h-10 w-10 text-foreground/40" />
-            <span className="text-sm font-semibold text-foreground/70 line-clamp-2">
-              {rec.title}
-            </span>
+            <Film className="h-8 w-8 text-foreground/40" />
           </div>
         )}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-card/80 to-transparent" />
       </div>
 
-      <div className="p-5">
-        <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+      <div className="p-4">
+        <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
           {rec.platform} · {rec.duration}
         </div>
-        <h3 className="font-display text-lg font-bold leading-tight tracking-tight text-foreground">
+        <h3 className="font-display text-base font-bold leading-tight tracking-tight text-foreground">
           {rec.title}
         </h3>
-        <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-foreground/65">
+        <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-foreground/65">
           {rec.reason}
         </p>
 
         <button
           type="button"
           onClick={onWantToWatch}
-          className="mt-4 inline-flex min-h-[40px] w-full items-center justify-center gap-2 rounded-xl border border-border bg-background/60 px-4 text-xs font-bold uppercase tracking-wider text-foreground transition-smooth hover:border-primary hover:text-primary"
+          className="mt-3 inline-flex min-h-[36px] w-full items-center justify-center gap-2 rounded-xl border border-border bg-background/60 px-4 text-xs font-bold uppercase tracking-wider text-foreground transition-smooth hover:border-primary hover:text-primary"
         >
           <Play className="h-3 w-3 fill-current" />
           Quiero verla
         </button>
 
-        <div className="mt-4 border-t border-border/40 pt-3">
+        <div className="mt-3 border-t border-border/40 pt-2.5">
           <IconFeedbackRow
             feedback={feedback}
             onSeen={onSeen}
