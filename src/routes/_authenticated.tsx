@@ -69,30 +69,28 @@ function AuthLayout() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-40 border-b border-border bg-white/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4 sm:px-8">
+      <header className="sticky top-0 z-40 border-b border-black/[0.06] bg-white/90 backdrop-blur-2xl">
+        <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-3 sm:px-8">
           <Link
             to="/"
             onClick={() => window.dispatchEvent(new CustomEvent("que-veo:go-home"))}
-            className="inline-flex items-center gap-2"
+            className="inline-flex items-center gap-1.5 transition-opacity hover:opacity-70"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground">
-              <Sparkles className="h-4 w-4 text-background" />
-            </div>
-            <span className="text-sm font-bold text-foreground">QueVeo</span>
+            <Sparkles className="h-3.5 w-3.5 text-primary" />
+            <span className="text-[15px] font-semibold tracking-tight text-foreground">Cinéfilo</span>
           </Link>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             {session ? (
               <>
                 <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
                   <AlertDialogTrigger asChild>
                     <button
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground/60 transition-all hover:text-foreground"
                       aria-label="Resetear mis intereses"
                       title="Resetear mis intereses"
                     >
-                      <RotateCcw className="h-4 w-4" />
+                      <RotateCcw className="h-3.5 w-3.5" />
                     </button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
@@ -155,18 +153,17 @@ function AuthLayout() {
                 </AlertDialog>
                 <button
                   onClick={handleLogout}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground/60 transition-all hover:text-foreground"
                   aria-label="Cerrar sesión"
                 >
-                  <LogOut className="h-4 w-4" />
+                  <LogOut className="h-3.5 w-3.5" />
                 </button>
               </>
             ) : (
               <Link
                 to="/login"
-                className="inline-flex h-9 items-center gap-1.5 rounded-full bg-foreground px-4 text-xs font-semibold text-background transition-colors hover:bg-foreground/85"
+                className="inline-flex h-8 items-center rounded-full bg-foreground px-4 text-xs font-semibold text-background transition-opacity hover:opacity-80"
               >
-                <LogIn className="h-3.5 w-3.5" />
                 Iniciar sesión
               </Link>
             )}

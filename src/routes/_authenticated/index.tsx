@@ -7,10 +7,10 @@ import {
   ThumbsUp,
   ThumbsDown,
   Heart,
-  EyeOff,
+  Eye,
+  Bookmark,
   RefreshCw,
   ExternalLink,
-  AlertTriangle,
   MapPin,
 } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
@@ -25,12 +25,12 @@ import {
 import { recommendConversational } from "@/lib/recommendations.functions";
 import { recordTitleFeedback } from "@/lib/feedback.functions";
 import { getProfile, setDefaultPlatforms } from "@/lib/profile.functions";
-import { Onboarding } from "@/components/Onboarding";
 import { VoiceOrb } from "@/components/VoiceOrb";
+import { PosterMarquee } from "@/components/PosterMarquee";
+import { fetchPostersClient } from "@/lib/itunes";
 import {
   readGuestSeed,
   seedForServer,
-  isOnboarded,
   bumpSearchCount,
   dismissLoginNudge,
 } from "@/lib/guestSeed";
@@ -50,13 +50,24 @@ export const Route = createFileRoute("/_authenticated/")({
   component: HomePage,
 });
 
+type FeedbackSentiment = "love" | "like" | "dislike" | "seen" | "watchlist";
+
 type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   text: string;
   data?: RecommendationsResult;
-  feedbackGiven?: Record<string, "love" | "like" | "dislike" | "seen">;
+  feedbackGiven?: Record<string, FeedbackSentiment>;
 };
+
+const WATCHLIST_KEY = "cinefilo:watchlist";
+function addToWatchlist(title: string) {
+  try {
+    const raw = localStorage.getItem(WATCHLIST_KEY);
+    const list: string[] = raw ? JSON.parse(raw) : [];
+    if (!list.includes(title)) localStorage.setItem(WATCHLIST_KEY, JSON.stringify([...list, title]));
+  } catch { /* noop */ }
+}
 
 const GUEST_PLATFORMS_KEY = "queveo:guest:default_platforms";
 
@@ -83,6 +94,7 @@ function HomePage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState("");
   const [excluded, setExcluded] = useState<string[]>([]);
+  const [posters, setPosters] = useState<Record<string, string | null>>({});
 
   const [session, setSession] = useState<Session | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
@@ -98,13 +110,6 @@ function HomePage() {
 
   const [guestPlatforms, setGuestPlatforms] = useState<Platform[]>(() => readGuestPlatforms());
   const [guestSeedVersion, setGuestSeedVersion] = useState(0);
-
-  const [showOnboarding, setShowOnboarding] = useState(false);
-  useEffect(() => {
-    if (!sessionReady || !isGuest) return;
-    if (isOnboarded()) return;
-    setShowOnboarding(true);
-  }, [sessionReady, isGuest]);
 
   const [showLoginNudge, setShowLoginNudge] = useState(false);
   useEffect(() => {
@@ -155,6 +160,7 @@ function HomePage() {
       setMessages([]);
       setInputText("");
       setExcluded([]);
+      setPosters({});
     };
     window.addEventListener("que-veo:go-home", handler);
     return () => window.removeEventListener("que-veo:go-home", handler);
@@ -164,12 +170,14 @@ function HomePage() {
     const trimmed = text.trim();
     if (trimmed.length < 2) return;
 
+    const isFirstMessage = step === "home";
     const userMsg: ChatMessage = { id: uid(), role: "user", text: trimmed };
     const nextMessages = [...messages, userMsg];
-    setMessages(nextMessages);
+
     setInputText("");
     setIsLoading(true);
-    if (step === "home") setStep("chat");
+    // For subsequent turns in chat: show user message immediately
+    if (!isFirstMessage) setMessages(nextMessages);
 
     const ctx = inferContext();
     const aiHistory = nextMessages.map((m) => ({
@@ -183,7 +191,8 @@ function HomePage() {
     }));
 
     try {
-      const data = await recommendConversational({
+      // First message: minimum 1.5s on home so the orb stays visible while thinking
+      const apiPromise = recommendConversational({
         data: {
           messages: aiHistory,
           platforms: effectivePlatforms,
@@ -194,15 +203,32 @@ function HomePage() {
           profileSeed: isGuest ? seedForServer(readGuestSeed()) : undefined,
         },
       });
+      const delayPromise = isFirstMessage
+        ? new Promise<void>((r) => setTimeout(r, 1500))
+        : Promise.resolve();
+      const [data] = await Promise.all([apiPromise, delayPromise]);
 
-      setMessages((prev) => [
-        ...prev,
-        { id: uid(), role: "assistant", text: "", data, feedbackGiven: {} },
-      ]);
+      const aiMsg: ChatMessage = { id: uid(), role: "assistant", text: "", data, feedbackGiven: {} };
+
+      if (isFirstMessage) {
+        // Transition to chat only after result is ready
+        setMessages([userMsg, aiMsg]);
+        setStep("chat");
+      } else {
+        setMessages((prev) => [...prev, aiMsg]);
+      }
+
       setExcluded((prev) => {
         const newTitles = [data.main.title, ...data.alternatives.map((a) => a.title)];
         return [...prev, ...newTitles.filter((t) => !prev.includes(t))];
       });
+
+      // Load posters in background after result appears
+      fetchPostersClient([
+        { title: data.main.title, type: data.main.type },
+        ...data.alternatives.map((a) => ({ title: a.title, type: a.type })),
+      ]).then((map) => setPosters((prev) => ({ ...prev, ...map })));
+
       if (isGuest) {
         bumpSearchCount();
         setGuestSeedVersion((v) => v + 1);
@@ -210,8 +236,7 @@ function HomePage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Algo salió mal.";
       toast.error(msg, { duration: 6000 });
-      setMessages(messages);
-      if (messages.length === 0) setStep("home");
+      if (!isFirstMessage) setMessages(messages);
     } finally {
       setIsLoading(false);
     }
@@ -221,7 +246,7 @@ function HomePage() {
     msgId: string,
     title: string,
     platform: string,
-    sentiment: "love" | "like" | "dislike" | "seen",
+    sentiment: FeedbackSentiment,
   ) => {
     setMessages((prev) =>
       prev.map((m) =>
@@ -230,6 +255,11 @@ function HomePage() {
           : m,
       ),
     );
+    if (sentiment === "watchlist") {
+      addToWatchlist(title);
+      toast.success(`"${title}" guardado para ver después`, { duration: 2000 });
+      return;
+    }
     void recordTitleFeedback({ data: { title, platform, sentiment } }).catch(() => {});
     if (sentiment === "dislike" || sentiment === "seen") {
       setExcluded((prev) => (prev.includes(title) ? prev : [...prev, title]));
@@ -248,10 +278,6 @@ function HomePage() {
 
   return (
     <main className="min-h-[calc(100vh-57px)]">
-      {showOnboarding && (
-        <Onboarding onDone={() => { setShowOnboarding(false); setGuestSeedVersion((v) => v + 1); }} />
-      )}
-
       {step === "home" && (
         <HomeScreen
           onSubmit={submit}
@@ -276,6 +302,7 @@ function HomePage() {
           isLoading={isLoading}
           isGuest={isGuest}
           inputText={inputText}
+          posters={posters}
           onInputChange={setInputText}
           onSubmit={submit}
           onFeedback={handleFeedback}
@@ -284,6 +311,7 @@ function HomePage() {
             setMessages([]);
             setInputText("");
             setExcluded([]);
+            setPosters({});
           }}
         />
       )}
@@ -323,7 +351,6 @@ function HomeScreen({
   onDismissLoginNudge: () => void;
 }) {
   const [text, setText] = useState("");
-  const [showSettings, setShowSettings] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = () => {
@@ -336,44 +363,40 @@ function HomeScreen({
   };
 
   return (
-    <section className="relative flex min-h-[calc(100vh-57px)] flex-col items-center justify-center overflow-hidden px-6 py-12 animate-fade-in">
-      {/* Background gradients */}
+    <section className="relative flex min-h-[calc(100vh-49px)] flex-col items-center justify-center overflow-hidden px-6 pb-40 pt-12 animate-fade-in">
+      {/* Subtle ambient gradient — barely perceptible */}
       <div className="pointer-events-none absolute inset-0" aria-hidden>
         <div
-          className="absolute left-1/2 top-0 h-[600px] w-[600px] -translate-x-1/2 -translate-y-1/3 rounded-full"
-          style={{ background: "radial-gradient(circle, oklch(0.51 0.22 277 / 0.06) 0%, transparent 70%)" }}
-        />
-        <div
-          className="absolute bottom-0 right-1/4 h-[400px] w-[400px] rounded-full"
-          style={{ background: "radial-gradient(circle, oklch(0.60 0.18 290 / 0.04) 0%, transparent 70%)" }}
+          className="absolute left-1/2 top-0 h-[500px] w-[500px] -translate-x-1/2 -translate-y-1/4 rounded-full"
+          style={{ background: "radial-gradient(circle, oklch(0.50 0.22 277 / 0.04) 0%, transparent 70%)" }}
         />
       </div>
 
       {/* Login nudge */}
       {showLoginNudge && (
         <div className="absolute top-4 left-1/2 z-20 w-full max-w-sm -translate-x-1/2 px-4 animate-fade-in">
-          <div className="rounded-2xl border border-primary/25 bg-white/90 p-4 backdrop-blur-sm">
-            <div className="flex items-start justify-between gap-3">
+          <div className="overflow-hidden rounded-2xl bg-white shadow-float">
+            <div className="flex items-start justify-between gap-3 p-4">
               <div>
-                <p className="text-sm font-semibold text-foreground">Guardá tu perfil</p>
+                <p className="text-[13px] font-semibold text-foreground">Guardá tu perfil</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   Creá tu cuenta para guardar plataformas y preferencias.
                 </p>
-                <div className="mt-2 flex gap-2">
-                  <Link to="/login" className="inline-flex rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary/90">
-                    Crear cuenta →
+                <div className="mt-3 flex gap-2">
+                  <Link to="/login" className="inline-flex rounded-full bg-foreground px-3 py-1.5 text-[11px] font-semibold text-background transition-opacity hover:opacity-80">
+                    Crear cuenta
                   </Link>
-                  <button onClick={onDismissLoginNudge} className="text-xs text-muted-foreground hover:text-foreground">Ahora no</button>
+                  <button onClick={onDismissLoginNudge} className="text-[11px] text-muted-foreground hover:text-foreground">Ahora no</button>
                 </div>
               </div>
-              <button onClick={onDismissLoginNudge} className="text-muted-foreground hover:text-foreground">✕</button>
+              <button onClick={onDismissLoginNudge} className="text-muted-foreground/50 transition-colors hover:text-foreground">✕</button>
             </div>
           </div>
         </div>
       )}
 
       {/* Center content */}
-      <div className="relative z-10 flex w-full max-w-lg flex-col items-center text-center">
+      <div className="relative z-10 flex w-full max-w-md flex-col items-center text-center">
         {/* Orb */}
         <VoiceOrb
           onFinalTranscript={(t) => onSubmit(t)}
@@ -381,25 +404,38 @@ function HomeScreen({
         />
 
         {/* Headline */}
-        <h1 className="mt-8 font-serif text-4xl font-bold leading-tight text-foreground sm:text-5xl">
-          ¿Qué querés ver esta noche?
+        <h1 className="mt-10 font-serif text-[2.6rem] font-bold leading-[1.1] tracking-[-0.03em] text-foreground sm:text-5xl">
+          ¿Qué querés<br />ver hoy?
         </h1>
-        <p className="mt-3 text-sm text-muted-foreground sm:text-base">
+
+        {/* Platform ticker */}
+        <div className="mt-5 w-full overflow-hidden" aria-hidden="true">
+          <div className="flex animate-platform-ticker gap-7 w-max">
+            {[...(PLATFORM_OPTIONS as Platform[]), ...(PLATFORM_OPTIONS as Platform[])].map((p, i) => (
+              <span key={i} className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] text-muted-foreground/40">
+                <span className="h-1.5 w-1.5 rounded-full" style={{ background: colorForPlatform(p) }} />
+                {p}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <p className="mt-4 text-[13px] text-muted-foreground">
           {isLoading ? (
             <span className="inline-flex items-center gap-1.5 text-primary">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Buscando algo perfecto…
+              Buscando en todas tus plataformas…
             </span>
           ) : (
-            "Hablame o escribime lo que querés ver"
+            "Describilo con tus palabras. Te encontramos lo perfecto en todas tus plataformas."
           )}
         </p>
 
-        {/* Text input bar */}
-        <div className="mt-8 w-full">
+        {/* Input — Apple search bar style */}
+        <div className="mt-7 w-full">
           <div className={cn(
-            "flex items-center gap-2 rounded-2xl border border-border bg-white/80 px-4 py-3 backdrop-blur-sm transition-all",
-            "focus-within:border-primary/50 focus-within:bg-white/90",
+            "flex items-center gap-2 rounded-2xl bg-white px-4 py-3 shadow-card transition-all duration-200",
+            "focus-within:shadow-float",
           )}>
             <input
               ref={inputRef}
@@ -407,9 +443,9 @@ function HomeScreen({
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
-              placeholder="o escribí acá…"
+              placeholder="una de acción, algo para llorar, comedia italiana…"
               disabled={isLoading}
-              className="min-w-0 flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none disabled:opacity-50"
+              className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground placeholder:text-muted-foreground/35 focus:outline-none disabled:opacity-50"
             />
             <MicButton
               onTranscript={(t, isFinal) => {
@@ -417,96 +453,70 @@ function HomeScreen({
                 setText((prev) => (prev ? `${prev.trim()} ${t}` : t));
                 inputRef.current?.focus();
               }}
-              className="shrink-0 text-muted-foreground hover:text-foreground"
+              className="shrink-0 text-muted-foreground/50 hover:text-muted-foreground"
             />
             <button
               type="button"
               onClick={handleSubmit}
               disabled={text.trim().length < 2 || isLoading}
               className={cn(
-                "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-smooth",
+                "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-all",
                 text.trim().length >= 2 && !isLoading
-                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                  : "bg-muted text-muted-foreground/40 cursor-not-allowed",
+                  ? "bg-foreground text-background hover:opacity-80"
+                  : "bg-muted text-muted-foreground/30 cursor-not-allowed",
               )}
               aria-label="Buscar"
             >
-              <ArrowUp className="h-4 w-4" />
+              <ArrowUp className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
 
-        {/* Settings toggle */}
-        <button
-          onClick={() => setShowSettings((v) => !v)}
-          className="mt-4 text-xs text-muted-foreground/60 transition-colors hover:text-muted-foreground"
-        >
-          {showSettings ? "Ocultar ajustes ↑" : "Ajustes de plataformas y ubicación ↓"}
-        </button>
-
-        {showSettings && (
-          <div className="mt-4 w-full space-y-3 animate-fade-in">
-            {/* Platform chips */}
-            <div className="rounded-2xl border border-border bg-white/70 p-3 backdrop-blur-sm">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Plataformas
-                </span>
-                {selectedPlatforms.length > 0 &&
-                  JSON.stringify([...selectedPlatforms].sort()) !== JSON.stringify([...defaultPlatforms].sort()) && (
-                    <button onClick={() => onSaveDefaultPlatforms(selectedPlatforms)} className="text-[11px] text-primary hover:underline">
-                      Guardar
-                    </button>
-                  )}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {(PLATFORM_OPTIONS as Platform[]).map((p) => {
-                  const active = selectedPlatforms.includes(p);
-                  return (
-                    <button
-                      key={p}
-                      onClick={() => togglePlatform(p)}
-                      style={active ? { borderColor: colorForPlatform(p), background: `${colorForPlatform(p)}22` } : undefined}
-                      className={cn(
-                        "inline-flex min-h-[28px] items-center gap-1 rounded-full border px-2.5 text-[11px] font-medium transition-smooth",
-                        active ? "text-foreground" : "border-border text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: colorForPlatform(p) }} />
-                      {p === "Star+" ? "Star+" : p}
-                    </button>
-                  );
-                })}
-              </div>
-              {selectedPlatforms.length === 0 && (
-                <p className="mt-1.5 text-[11px] text-muted-foreground/60">Todas las plataformas.</p>
-              )}
+        {/* Platform filter — minimal chips */}
+        <div className="mt-4 w-full">
+          <div className="flex items-center gap-2">
+            <div className="flex flex-1 flex-wrap gap-1.5">
+              {(PLATFORM_OPTIONS as Platform[]).map((p) => {
+                const active = selectedPlatforms.includes(p);
+                return (
+                  <button
+                    key={p}
+                    onClick={() => togglePlatform(p)}
+                    style={active ? { color: colorForPlatform(p) } : undefined}
+                    className={cn(
+                      "inline-flex min-h-[24px] items-center gap-1 rounded-full px-2 text-[11px] font-medium transition-all",
+                      active
+                        ? "bg-white shadow-xs"
+                        : "text-muted-foreground/40 hover:text-muted-foreground/70",
+                    )}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: colorForPlatform(p) }} />
+                    {p}
+                  </button>
+                );
+              })}
+              {selectedPlatforms.length > 0 &&
+                JSON.stringify([...selectedPlatforms].sort()) !== JSON.stringify([...defaultPlatforms].sort()) && (
+                  <button onClick={() => onSaveDefaultPlatforms(selectedPlatforms)} className="text-[11px] text-primary/70 hover:text-primary">
+                    Guardar
+                  </button>
+                )}
             </div>
-
-            {/* Location toggle */}
-            <div className="flex items-center justify-between rounded-2xl border border-border bg-white/70 px-3 py-2.5 backdrop-blur-sm">
-              <div>
-                <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  <MapPin className="h-3 w-3 text-primary" />
-                  Usar ubicación
-                </div>
-                {useLocation && weatherLoading && <p className="mt-0.5 text-[11px] text-muted-foreground">Leyendo clima…</p>}
-                {useLocation && !weatherLoading && weather && <p className="mt-0.5 text-[11px] text-primary">{weatherHintShort(weather)}</p>}
-                {useLocation && !weatherLoading && !weather && <p className="mt-0.5 text-[11px] text-destructive">Sin acceso al clima.</p>}
-                {!useLocation && <p className="mt-0.5 text-[11px] text-muted-foreground/60">Suma el clima al contexto.</p>}
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={useLocation}
-                onClick={() => onToggleLocation(!useLocation)}
-                className={cn("relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors", useLocation ? "bg-primary" : "bg-border")}
-              >
-                <span className={cn("inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform", useLocation ? "translate-x-4" : "translate-x-0.5")} />
-              </button>
-            </div>
+            <button
+              type="button"
+              title={useLocation ? (weather ? weatherHintShort(weather) : "Usando ubicación") : "Activar ubicación"}
+              onClick={() => onToggleLocation(!useLocation)}
+              className={cn("shrink-0 p-1 transition-all", useLocation ? "text-primary" : "text-muted-foreground/30 hover:text-muted-foreground/60")}
+            >
+              {weatherLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <MapPin className="h-3 w-3" />}
+            </button>
           </div>
-        )}
+        </div>
+      </div>
+
+      {/* Poster marquee — mood board at bottom, very subtle */}
+      <div className="absolute bottom-0 left-0 right-0 z-0 opacity-40">
+        <PosterMarquee />
       </div>
     </section>
   );
@@ -519,6 +529,7 @@ function ChatScreen({
   isLoading,
   isGuest,
   inputText,
+  posters,
   onInputChange,
   onSubmit,
   onFeedback,
@@ -528,9 +539,10 @@ function ChatScreen({
   isLoading: boolean;
   isGuest: boolean;
   inputText: string;
+  posters: Record<string, string | null>;
   onInputChange: (v: string) => void;
   onSubmit: (text: string) => void;
-  onFeedback: (msgId: string, title: string, platform: string, sentiment: "love" | "like" | "dislike" | "seen") => void;
+  onFeedback: (msgId: string, title: string, platform: string, sentiment: FeedbackSentiment) => void;
   onNewSearch: () => void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
@@ -545,20 +557,15 @@ function ChatScreen({
   };
 
   return (
-    <section className="mx-auto flex max-w-2xl flex-col px-4 pb-6 pt-6 sm:px-6 animate-fade-in">
+    <section className="mx-auto flex max-w-2xl flex-col px-4 pb-8 pt-6 sm:px-6 animate-fade-in">
       {/* Chat window */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-card">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-5 py-3">
-          <div className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded-full bg-red-500/70" />
-            <span className="h-3 w-3 rounded-full bg-yellow-500/70" />
-            <span className="h-3 w-3 rounded-full bg-green-500/70" />
-            <span className="ml-2 text-xs font-semibold text-muted-foreground">CineAI</span>
-          </div>
+      <div className="overflow-hidden rounded-3xl bg-white shadow-float">
+        {/* Header — minimal, no macOS dots */}
+        <div className="flex items-center justify-between border-b border-black/[0.05] px-6 py-4">
+          <span className="text-[13px] font-semibold tracking-tight text-foreground">Cinéfilo</span>
           <button
             onClick={onNewSearch}
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-muted-foreground transition-smooth hover:bg-muted hover:text-foreground"
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium text-muted-foreground/60 transition-all hover:text-foreground"
           >
             <RefreshCw className="h-3 w-3" />
             Nueva búsqueda
@@ -566,8 +573,8 @@ function ChatScreen({
         </div>
 
         {/* Messages */}
-        <div className="max-h-[60vh] overflow-y-auto px-5 py-5">
-          <div className="space-y-5">
+        <div className="max-h-[62vh] overflow-y-auto px-6 py-6">
+          <div className="space-y-6">
             {messages.map((msg) =>
               msg.role === "user" ? (
                 <UserBubble key={msg.id} text={msg.text} />
@@ -576,6 +583,7 @@ function ChatScreen({
                   key={msg.id}
                   msg={msg}
                   isGuest={isGuest}
+                  posters={posters}
                   onFeedback={(title, platform, sentiment) =>
                     onFeedback(msg.id, title, platform, sentiment)
                   }
@@ -584,9 +592,12 @@ function ChatScreen({
             )}
 
             {isLoading && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground animate-fade-in">
-                <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                Buscando algo perfecto…
+              <div className="flex items-center gap-2 animate-fade-in">
+                <div className="flex gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30 [animation:bounce_1.2s_ease-in-out_0s_infinite]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30 [animation:bounce_1.2s_ease-in-out_0.2s_infinite]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30 [animation:bounce_1.2s_ease-in-out_0.4s_infinite]" />
+                </div>
               </div>
             )}
           </div>
@@ -594,8 +605,8 @@ function ChatScreen({
         </div>
       </div>
 
-      {/* Input bar */}
-      <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-card">
+      {/* Input bar — Apple Messages style */}
+      <div className="mt-3 overflow-hidden rounded-2xl bg-white shadow-card">
         <textarea
           ref={inputRef}
           value={inputText}
@@ -604,28 +615,28 @@ function ChatScreen({
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
           }}
           rows={1}
-          placeholder="Seguí pidiendo… algo más oscuro, solo Netflix…"
-          className="w-full resize-none bg-transparent px-5 pb-2 pt-4 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
+          placeholder="Seguí afinando… algo más rápido, sin gore, solo Prime…"
+          className="w-full resize-none bg-transparent px-5 pb-2 pt-4 text-[13px] text-foreground placeholder:text-muted-foreground/30 focus:outline-none"
           style={{ maxHeight: "100px" }}
         />
-        <div className="flex items-center justify-between border-t border-border px-4 py-2">
+        <div className="flex items-center justify-between px-4 py-2.5">
           <MicButton
             onTranscript={(t, isFinal) => {
               if (!t || !isFinal) return;
               onInputChange(inputText ? `${inputText.trim()} ${t}` : t);
               inputRef.current?.focus();
             }}
-            className="text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground/40 hover:text-muted-foreground"
           />
           <button
             type="button"
             onClick={handleSubmit}
             disabled={inputText.trim().length < 2 || isLoading}
             className={cn(
-              "inline-flex h-8 w-8 items-center justify-center rounded-full transition-smooth",
+              "inline-flex h-7 w-7 items-center justify-center rounded-full transition-all",
               inputText.trim().length >= 2 && !isLoading
-                ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                : "bg-muted text-muted-foreground/40 cursor-not-allowed",
+                ? "bg-foreground text-background hover:opacity-75"
+                : "bg-muted text-muted-foreground/25 cursor-not-allowed",
             )}
             aria-label="Enviar"
           >
@@ -635,8 +646,8 @@ function ChatScreen({
       </div>
 
       {isGuest && (
-        <p className="mt-3 text-center text-xs text-muted-foreground">
-          ¿Querés guardar tu historial?{" "}
+        <p className="mt-4 text-center text-[11px] text-muted-foreground/60">
+          ¿Querés que recuerde tus gustos?{" "}
           <Link to="/login" className="font-semibold text-primary hover:underline">
             Crear cuenta gratis →
           </Link>
@@ -651,8 +662,8 @@ function ChatScreen({
 function UserBubble({ text }: { text: string }) {
   return (
     <div className="flex justify-end">
-      <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-foreground px-4 py-3">
-        <p className="text-sm leading-relaxed text-background">{text}</p>
+      <div className="max-w-[78%] rounded-[20px] rounded-tr-md bg-foreground px-4 py-2.5">
+        <p className="text-[13px] leading-relaxed text-white">{text}</p>
       </div>
     </div>
   );
@@ -661,143 +672,210 @@ function UserBubble({ text }: { text: string }) {
 function AssistantBubble({
   msg,
   isGuest,
+  posters,
   onFeedback,
 }: {
   msg: ChatMessage;
   isGuest: boolean;
-  onFeedback: (title: string, platform: string, sentiment: "love" | "like" | "dislike" | "seen") => void;
+  posters: Record<string, string | null>;
+  onFeedback: (title: string, platform: string, sentiment: FeedbackSentiment) => void;
 }) {
   const { data } = msg;
   if (!data) return null;
   const { main, alternatives } = data;
   const mainFeedback = msg.feedbackGiven?.[main.title] ?? null;
+  const mainPoster = posters[main.title];
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Main recommendation */}
-      <div className="max-w-[88%] rounded-2xl rounded-tl-sm border border-border bg-white px-4 py-4">
-        <p className="text-sm leading-relaxed text-foreground">
-          Te recomiendo{" "}
-          <strong className="font-bold text-foreground">{main.title}</strong>{" "}
-          <span className="text-muted-foreground">({main.duration})</span>
-          {" — "}
-          {main.reason}{" "}
-          Disponible en{" "}
-          <strong style={{ color: colorForPlatform(main.platform) }}>{main.platform}</strong>.
-        </p>
-
-        <div className="mt-3 flex items-center gap-2">
-          <a
-            href={deepLinkFor(main.platform, main.title)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-smooth hover:border-primary/50 hover:text-primary"
+      {/* Main recommendation card — Apple-style, shadow only */}
+      <div className="max-w-[92%] overflow-hidden rounded-2xl rounded-tl-[4px] bg-white shadow-card">
+        <div className="flex">
+          {/* Poster */}
+          <div
+            className="relative h-[172px] w-[115px] shrink-0 overflow-hidden"
+            style={!mainPoster ? { background: `${colorForPlatform(main.platform)}12` } : undefined}
           >
-            <ExternalLink className="h-3 w-3" />
-            Ver en {main.platform}
-          </a>
+            {mainPoster ? (
+              <img src={mainPoster} alt={main.title} className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center">
+                <span className="text-3xl font-black opacity-[0.12]" style={{ color: colorForPlatform(main.platform) }}>
+                  {main.title.charAt(0)}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Content */}
+          <div className="flex flex-1 flex-col justify-between p-4">
+            <div>
+              <div className="mb-2 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5" style={{ background: `${colorForPlatform(main.platform)}14` }}>
+                <span className="h-1.5 w-1.5 rounded-full" style={{ background: colorForPlatform(main.platform) }} />
+                <span className="text-[10px] font-semibold" style={{ color: colorForPlatform(main.platform) }}>
+                  {main.platform}
+                </span>
+              </div>
+              <h3 className="text-[14px] font-bold leading-tight tracking-tight text-foreground">{main.title}</h3>
+              <p className="mt-0.5 text-[11px] text-muted-foreground/70">{main.duration} · {main.type}</p>
+              <p className="mt-2 line-clamp-3 text-[11px] leading-relaxed text-foreground/60">{main.reason}</p>
+            </div>
+            <a
+              href={deepLinkFor(main.platform, main.title)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 inline-flex w-fit items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-semibold text-white transition-opacity hover:opacity-85"
+              style={{ background: colorForPlatform(main.platform) }}
+            >
+              <ExternalLink className="h-2.5 w-2.5" />
+              Ver en {main.platform}
+            </a>
+          </div>
         </div>
 
         {!isGuest && (
-          <div className="mt-3 border-t border-border/60 pt-3">
+          <div className="border-t border-black/[0.04] px-3 py-2">
             <FeedbackRow
               feedback={mainFeedback}
               onLove={() => onFeedback(main.title, main.platform, "love")}
               onLike={() => onFeedback(main.title, main.platform, "like")}
-              onDislike={() => onFeedback(main.title, main.platform, "dislike")}
+              onWatchlist={() => onFeedback(main.title, main.platform, "watchlist")}
               onSeen={() => onFeedback(main.title, main.platform, "seen")}
+              onDislike={() => onFeedback(main.title, main.platform, "dislike")}
             />
           </div>
         )}
       </div>
 
-      {/* Alternatives */}
-      {alternatives.map((alt) => {
-        const altFeedback = msg.feedbackGiven?.[alt.title] ?? null;
-        return (
-          <div key={alt.title} className="max-w-[82%] rounded-xl border border-border/60 bg-muted/60 px-4 py-3">
-            <p className="text-xs leading-relaxed text-foreground/80">
-              O también:{" "}
-              <strong className="font-semibold">{alt.title}</strong> en{" "}
-              <span style={{ color: colorForPlatform(alt.platform) }}>{alt.platform}</span>
-              {" — "}
-              <span className="text-muted-foreground">{alt.reason}</span>
-            </p>
-            <div className="mt-2 flex items-center justify-between">
-              <a
-                href={deepLinkFor(alt.platform, alt.title)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
-              >
-                <ExternalLink className="h-2.5 w-2.5" />
-                {alt.platform}
-              </a>
-              {!isGuest && (
-                <CompactFeedback
-                  feedback={altFeedback}
-                  onLike={() => onFeedback(alt.title, alt.platform, "like")}
-                  onDislike={() => onFeedback(alt.title, alt.platform, "dislike")}
-                  onSeen={() => onFeedback(alt.title, alt.platform, "seen")}
-                />
-              )}
-            </div>
+      {/* Alternatives carousel */}
+      {alternatives.length > 0 && (
+        <div className="max-w-[92%]">
+          <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/40">También podría ser</p>
+          <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+            {alternatives.map((alt, i) => {
+              const altPoster = posters[alt.title];
+              const altFeedback = msg.feedbackGiven?.[alt.title] ?? null;
+              return (
+                <div
+                  key={alt.title}
+                  className={cn(
+                    "flex-none w-[124px] overflow-hidden rounded-xl bg-white shadow-card",
+                    i >= 2 && "hidden sm:flex sm:flex-col",
+                  )}
+                >
+                  <div className="h-[78px] overflow-hidden" style={!altPoster ? { background: `${colorForPlatform(alt.platform)}10` } : undefined}>
+                    {altPoster ? (
+                      <img src={altPoster} alt={alt.title} className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full items-center justify-center">
+                        <span className="text-sm font-black opacity-[0.12]" style={{ color: colorForPlatform(alt.platform) }}>
+                          {alt.title.charAt(0)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-2">
+                    <p className="line-clamp-2 text-[11px] font-semibold leading-tight tracking-tight text-foreground">{alt.title}</p>
+                    <div className="mt-1 flex items-center gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: colorForPlatform(alt.platform) }} />
+                      <span className="text-[10px] text-muted-foreground/60">{alt.platform}</span>
+                    </div>
+                    <div className="mt-1.5 flex items-center justify-between">
+                      <a href={deepLinkFor(alt.platform, alt.title)} target="_blank" rel="noopener noreferrer"
+                        className="text-[10px] text-muted-foreground/50 transition-colors hover:text-foreground">
+                        Ver →
+                      </a>
+                      {!isGuest && (
+                        <CompactFeedback
+                          feedback={altFeedback}
+                          onWatchlist={() => onFeedback(alt.title, alt.platform, "watchlist")}
+                          onSeen={() => onFeedback(alt.title, alt.platform, "seen")}
+                          onDislike={() => onFeedback(alt.title, alt.platform, "dislike")}
+                        />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        );
-      })}
+        </div>
+      )}
     </div>
   );
 }
 
 /* ===================== FEEDBACK ===================== */
 
-function FeedbackRow({ feedback, onLove, onLike, onDislike, onSeen }: {
-  feedback: "love" | "like" | "dislike" | "seen" | null;
-  onLove: () => void; onLike: () => void; onDislike: () => void; onSeen: () => void;
+const FEEDBACK_ACTIONS = [
+  { key: "love",      label: "Me encanta",       Icon: Heart,      active: "text-pink-500",       hover: "hover:bg-pink-50 hover:text-pink-500" },
+  { key: "like",      label: "Me gusta",          Icon: ThumbsUp,   active: "text-primary",        hover: "hover:bg-primary/8 hover:text-primary" },
+  { key: "watchlist", label: "Ver en otro momento", Icon: Bookmark, active: "text-amber-500",      hover: "hover:bg-amber-50 hover:text-amber-500" },
+  { key: "seen",      label: "Ya la vi",          Icon: Eye,        active: "text-muted-foreground", hover: "hover:bg-muted hover:text-foreground" },
+  { key: "dislike",   label: "No me gusta",       Icon: ThumbsDown, active: "text-destructive",    hover: "hover:bg-destructive/8 hover:text-destructive" },
+] as const;
+
+function FeedbackRow({ feedback, onLove, onLike, onWatchlist, onSeen, onDislike }: {
+  feedback: FeedbackSentiment | null;
+  onLove: () => void; onLike: () => void; onWatchlist: () => void; onSeen: () => void; onDislike: () => void;
 }) {
-  if (feedback === "love") return (
-    <div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
-      <Heart className="h-3.5 w-3.5 fill-current" />¡Te encanta! Lo recordamos.
-    </div>
-  );
-  if (feedback === "like") return (
-    <div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
-      <ThumbsUp className="h-3.5 w-3.5" />Te gusta. Lo recordamos.
-    </div>
-  );
-  if (feedback === "dislike" || feedback === "seen") return (
-    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-      <AlertTriangle className="h-3.5 w-3.5" />
-      {feedback === "seen" ? "Marcado como ya vista." : "Descartado."}
-    </div>
-  );
+  const handlers: Record<string, () => void> = { love: onLove, like: onLike, watchlist: onWatchlist, seen: onSeen, dislike: onDislike };
+
+  if (feedback) {
+    const match = FEEDBACK_ACTIONS.find((a) => a.key === feedback);
+    if (match) {
+      const { Icon, label, active } = match;
+      return (
+        <div className={cn("flex items-center gap-1.5 text-xs font-medium", active)}>
+          <Icon className="h-3.5 w-3.5" />
+          {label}
+        </div>
+      );
+    }
+  }
+
   return (
-    <div className="flex items-center gap-3">
-      {([
-        { label: "Amo", icon: Heart, action: onLove, hover: "hover:text-primary" },
-        { label: "Va", icon: ThumbsUp, action: onLike, hover: "hover:text-primary" },
-        { label: "No", icon: ThumbsDown, action: onDislike, hover: "hover:text-destructive" },
-        { label: "Ya la vi", icon: EyeOff, action: onSeen, hover: "hover:text-foreground" },
-      ] as const).map(({ label, icon: Icon, action, hover }) => (
-        <button key={label} onClick={action}
-          className={cn("group flex items-center gap-1 text-xs text-muted-foreground transition-colors", hover)}>
-          <Icon className="h-3.5 w-3.5" />{label}
+    <div className="flex items-center gap-0.5">
+      {FEEDBACK_ACTIONS.map(({ key, label, Icon, hover }) => (
+        <button
+          key={key}
+          onClick={handlers[key]}
+          title={label}
+          className={cn(
+            "flex flex-col items-center gap-0.5 rounded-xl px-2 py-1.5 text-muted-foreground/60 transition-colors",
+            hover,
+          )}
+        >
+          <Icon className="h-4 w-4" />
+          <span className="text-[9px] leading-none">{label.split(" ")[0]}</span>
         </button>
       ))}
     </div>
   );
 }
 
-function CompactFeedback({ feedback, onLike, onDislike, onSeen }: {
-  feedback: "love" | "like" | "dislike" | "seen" | null;
-  onLike: () => void; onDislike: () => void; onSeen: () => void;
+function CompactFeedback({ feedback, onWatchlist, onSeen, onDislike }: {
+  feedback: FeedbackSentiment | null;
+  onWatchlist: () => void; onSeen: () => void; onDislike: () => void;
 }) {
-  if (feedback) return <span className="text-[11px] text-muted-foreground">{feedback === "like" || feedback === "love" ? "✓" : "✗"}</span>;
+  if (feedback) {
+    const match = FEEDBACK_ACTIONS.find((a) => a.key === feedback);
+    return <span className={cn("text-[10px]", match?.active ?? "text-muted-foreground")}>{
+      feedback === "like" || feedback === "love" || feedback === "watchlist" ? "✓" : "✗"
+    }</span>;
+  }
   return (
-    <div className="flex items-center gap-2">
-      <button onClick={onLike} className="text-muted-foreground hover:text-primary" title="Me gusta"><ThumbsUp className="h-3 w-3" /></button>
-      <button onClick={onDislike} className="text-muted-foreground hover:text-destructive" title="No me gusta"><ThumbsDown className="h-3 w-3" /></button>
-      <button onClick={onSeen} className="text-muted-foreground hover:text-foreground" title="Ya la vi"><EyeOff className="h-3 w-3" /></button>
+    <div className="flex items-center gap-1">
+      <button onClick={onWatchlist} title="Ver en otro momento" className="rounded p-0.5 text-muted-foreground/50 transition-colors hover:bg-amber-50 hover:text-amber-500">
+        <Bookmark className="h-3 w-3" />
+      </button>
+      <button onClick={onSeen} title="Ya la vi" className="rounded p-0.5 text-muted-foreground/50 transition-colors hover:bg-muted hover:text-foreground">
+        <Eye className="h-3 w-3" />
+      </button>
+      <button onClick={onDislike} title="No me gusta" className="rounded p-0.5 text-muted-foreground/50 transition-colors hover:bg-destructive/10 hover:text-destructive">
+        <ThumbsDown className="h-3 w-3" />
+      </button>
     </div>
   );
 }
