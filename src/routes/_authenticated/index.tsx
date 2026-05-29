@@ -27,6 +27,7 @@ import { recordTitleFeedback } from "@/lib/feedback.functions";
 import { getProfile, setDefaultPlatforms } from "@/lib/profile.functions";
 import { VoiceOrb } from "@/components/VoiceOrb";
 import { PosterMarquee } from "@/components/PosterMarquee";
+import { PlatformLogo } from "@/components/PlatformLogo";
 import { fetchPostersClient } from "@/lib/itunes";
 import {
   readGuestSeed,
@@ -409,13 +410,10 @@ function HomeScreen({
         </h1>
 
         {/* Platform ticker */}
-        <div className="mt-5 w-full overflow-hidden" aria-hidden="true">
-          <div className="flex animate-platform-ticker gap-7 w-max">
+        <div className="mt-6 w-full overflow-hidden" aria-hidden="true">
+          <div className="flex animate-platform-ticker items-center gap-10 w-max">
             {[...(PLATFORM_OPTIONS as Platform[]), ...(PLATFORM_OPTIONS as Platform[])].map((p, i) => (
-              <span key={i} className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] text-muted-foreground/40">
-                <span className="h-1.5 w-1.5 rounded-full" style={{ background: colorForPlatform(p) }} />
-                {p}
-              </span>
+              <PlatformLogo key={i} platform={p} style={{ opacity: 0.28 }} />
             ))}
           </div>
         </div>
