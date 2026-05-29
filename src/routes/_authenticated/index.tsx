@@ -9,7 +9,6 @@ import {
   Heart,
   EyeOff,
   RefreshCw,
-  Mic,
   ExternalLink,
   AlertTriangle,
   MapPin,
@@ -27,6 +26,7 @@ import { recommendConversational } from "@/lib/recommendations.functions";
 import { recordTitleFeedback } from "@/lib/feedback.functions";
 import { getProfile, setDefaultPlatforms } from "@/lib/profile.functions";
 import { Onboarding } from "@/components/Onboarding";
+import { VoiceOrb } from "@/components/VoiceOrb";
 import {
   readGuestSeed,
   seedForServer,
@@ -145,13 +145,17 @@ function HomePage() {
     setUseLocation(enabled);
     if (!enabled) { setWeather(null); return; }
     setWeatherLoading(true);
-    const w = await getWeatherSnapshot();
-    setWeather(w);
+    setWeather(await getWeatherSnapshot());
     setWeatherLoading(false);
   };
 
   useEffect(() => {
-    const handler = () => { setStep("home"); setMessages([]); setInputText(""); setExcluded([]); };
+    const handler = () => {
+      setStep("home");
+      setMessages([]);
+      setInputText("");
+      setExcluded([]);
+    };
     window.addEventListener("que-veo:go-home", handler);
     return () => window.removeEventListener("que-veo:go-home", handler);
   }, []);
@@ -168,11 +172,6 @@ function HomePage() {
     if (step === "home") setStep("chat");
 
     const ctx = inferContext();
-    const contextHint = contextToPromptHint(ctx);
-    const seasonHint = seasonHintShort(ctx);
-    const weatherHint = weather ? weatherHintShort(weather) : null;
-
-    // Build conversation history for AI: assistant messages summarized as titles
     const aiHistory = nextMessages.map((m) => ({
       role: m.role as "user" | "assistant",
       content:
@@ -188,27 +187,22 @@ function HomePage() {
         data: {
           messages: aiHistory,
           platforms: effectivePlatforms,
-          contextHint,
-          seasonHint,
-          weatherHint,
+          contextHint: contextToPromptHint(ctx),
+          seasonHint: seasonHintShort(ctx),
+          weatherHint: weather ? weatherHintShort(weather) : null,
           excludeTitles: excluded,
           profileSeed: isGuest ? seedForServer(readGuestSeed()) : undefined,
         },
       });
 
-      const aiMsg: ChatMessage = {
-        id: uid(),
-        role: "assistant",
-        text: "",
-        data,
-        feedbackGiven: {},
-      };
-      setMessages((prev) => [...prev, aiMsg]);
-
-      // Track recommended titles to avoid repeating
-      const newExcluded = [data.main.title, ...data.alternatives.map((a) => a.title)];
-      setExcluded((prev) => [...prev, ...newExcluded.filter((t) => !prev.includes(t))]);
-
+      setMessages((prev) => [
+        ...prev,
+        { id: uid(), role: "assistant", text: "", data, feedbackGiven: {} },
+      ]);
+      setExcluded((prev) => {
+        const newTitles = [data.main.title, ...data.alternatives.map((a) => a.title)];
+        return [...prev, ...newTitles.filter((t) => !prev.includes(t))];
+      });
       if (isGuest) {
         bumpSearchCount();
         setGuestSeedVersion((v) => v + 1);
@@ -216,14 +210,14 @@ function HomePage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Algo salió mal.";
       toast.error(msg, { duration: 6000 });
-      setMessages(nextMessages.slice(0, -1)); // revert user message
-      if (step === "home" && nextMessages.length === 1) setStep("home");
+      setMessages(messages);
+      if (messages.length === 0) setStep("home");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleFeedbackInMessage = (
+  const handleFeedback = (
     msgId: string,
     title: string,
     platform: string,
@@ -253,21 +247,17 @@ function HomePage() {
   };
 
   return (
-    <main className="min-h-[calc(100vh-65px)]">
+    <main className="min-h-[calc(100vh-57px)]">
       {showOnboarding && (
-        <Onboarding
-          onDone={() => {
-            setShowOnboarding(false);
-            setGuestSeedVersion((v) => v + 1);
-          }}
-        />
+        <Onboarding onDone={() => { setShowOnboarding(false); setGuestSeedVersion((v) => v + 1); }} />
       )}
 
       {step === "home" && (
         <HomeScreen
           onSubmit={submit}
-          defaultPlatforms={defaultPlatforms}
+          isLoading={isLoading}
           selectedPlatforms={selectedPlatforms}
+          defaultPlatforms={defaultPlatforms}
           onSelectedPlatformsChange={setSelectedPlatforms}
           onSaveDefaultPlatforms={saveDefaultPlatforms}
           useLocation={useLocation}
@@ -288,22 +278,26 @@ function HomePage() {
           inputText={inputText}
           onInputChange={setInputText}
           onSubmit={submit}
-          onFeedback={handleFeedbackInMessage}
-          onNewSearch={() => { setStep("home"); setMessages([]); setInputText(""); setExcluded([]); }}
+          onFeedback={handleFeedback}
+          onNewSearch={() => {
+            setStep("home");
+            setMessages([]);
+            setInputText("");
+            setExcluded([]);
+          }}
         />
       )}
     </main>
   );
 }
 
-/* ===================== HOME SCREEN ===================== */
-
-const FLOATING_PLATFORMS = ["Netflix", "Disney+", "Max", "Prime Video", "Apple TV+"];
+/* ===================== HOME ===================== */
 
 function HomeScreen({
   onSubmit,
-  defaultPlatforms,
+  isLoading,
   selectedPlatforms,
+  defaultPlatforms,
   onSelectedPlatformsChange,
   onSaveDefaultPlatforms,
   useLocation,
@@ -315,8 +309,9 @@ function HomeScreen({
   onDismissLoginNudge,
 }: {
   onSubmit: (text: string) => void;
-  defaultPlatforms: Platform[];
+  isLoading: boolean;
   selectedPlatforms: Platform[];
+  defaultPlatforms: Platform[];
   onSelectedPlatformsChange: (p: Platform[]) => void;
   onSaveDefaultPlatforms: (p: Platform[]) => Promise<void>;
   useLocation: boolean;
@@ -328,7 +323,8 @@ function HomeScreen({
   onDismissLoginNudge: () => void;
 }) {
   const [text, setText] = useState("");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = () => {
     if (text.trim().length >= 2) onSubmit(text.trim());
@@ -340,227 +336,183 @@ function HomeScreen({
   };
 
   return (
-    <section className="flex flex-col items-center px-6 pb-16 pt-16 sm:px-8 animate-fade-in">
+    <section className="relative flex min-h-[calc(100vh-57px)] flex-col items-center justify-center overflow-hidden px-6 py-12 animate-fade-in">
+      {/* Background gradients */}
+      <div className="pointer-events-none absolute inset-0" aria-hidden>
+        <div
+          className="absolute left-1/2 top-0 h-[700px] w-[700px] -translate-x-1/2 -translate-y-1/2 rounded-full"
+          style={{ background: "radial-gradient(circle, oklch(0.25 0.12 280 / 0.18) 0%, transparent 70%)" }}
+        />
+        <div
+          className="absolute bottom-0 left-1/3 h-[400px] w-[400px] rounded-full"
+          style={{ background: "radial-gradient(circle, oklch(0.50 0.15 290 / 0.08) 0%, transparent 70%)" }}
+        />
+      </div>
+
       {/* Login nudge */}
       {showLoginNudge && (
-        <div className="mb-8 w-full max-w-xl rounded-2xl border border-primary/20 bg-primary/5 p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-foreground">Guardá tu perfil de gusto</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Creá tu cuenta para que tus plataformas y preferencias te sigan en cualquier dispositivo.
-              </p>
-              <div className="mt-3 flex items-center gap-2">
-                <Link
-                  to="/login"
-                  className="inline-flex items-center rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
-                >
-                  Crear cuenta gratis →
-                </Link>
-                <button onClick={onDismissLoginNudge} className="text-xs text-muted-foreground hover:text-foreground">
-                  Ahora no
-                </button>
+        <div className="absolute top-4 left-1/2 z-20 w-full max-w-sm -translate-x-1/2 px-4 animate-fade-in">
+          <div className="rounded-2xl border border-primary/25 bg-card/80 p-4 backdrop-blur-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Guardá tu perfil</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Creá tu cuenta para guardar plataformas y preferencias.
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <Link to="/login" className="inline-flex rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary/90">
+                    Crear cuenta →
+                  </Link>
+                  <button onClick={onDismissLoginNudge} className="text-xs text-muted-foreground hover:text-foreground">Ahora no</button>
+                </div>
               </div>
+              <button onClick={onDismissLoginNudge} className="text-muted-foreground hover:text-foreground">✕</button>
             </div>
-            <button onClick={onDismissLoginNudge} className="text-muted-foreground hover:text-foreground">
-              ✕
-            </button>
           </div>
         </div>
       )}
 
-      {/* Hero */}
-      <div className="w-full max-w-2xl text-center">
-        <div className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm">
-          <span className="text-primary">✦</span>
-          Descubrí tu próxima película con IA
-        </div>
+      {/* Center content */}
+      <div className="relative z-10 flex w-full max-w-lg flex-col items-center text-center">
+        {/* Orb */}
+        <VoiceOrb
+          onFinalTranscript={(t) => onSubmit(t)}
+          disabled={isLoading}
+        />
 
-        <h1 className="mb-4 font-serif text-5xl font-bold leading-[1.05] tracking-tight text-foreground sm:text-6xl lg:text-7xl">
-          ¿Qué querés ver hoy?
+        {/* Headline */}
+        <h1 className="mt-8 font-serif text-4xl font-bold leading-tight text-foreground sm:text-5xl">
+          ¿Qué querés ver esta noche?
         </h1>
-        <p className="mb-10 text-base leading-relaxed text-muted-foreground sm:text-lg">
-          Describilo con tus palabras. Te encontramos lo perfecto en todas tus plataformas.
+        <p className="mt-3 text-sm text-muted-foreground sm:text-base">
+          {isLoading ? (
+            <span className="inline-flex items-center gap-1.5 text-primary">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Buscando algo perfecto…
+            </span>
+          ) : (
+            "Hablame o escribime lo que querés ver"
+          )}
         </p>
 
-        {/* Input card with floating platforms */}
-        <div className="relative">
-          {/* Floating platform chips — desktop */}
-          {FLOATING_PLATFORMS.slice(0, 2).map((p, i) => (
-            <div
-              key={p}
-              className="pointer-events-none absolute hidden select-none lg:flex"
-              style={{
-                left: i === 0 ? "-9rem" : "-6.5rem",
-                top: i === 0 ? "20%" : "58%",
-              }}
-            >
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-3.5 py-2 text-sm font-semibold shadow-float">
-                <span className="h-2 w-2 rounded-full" style={{ background: colorForPlatform(p) }} />
-                {p}
-              </span>
-            </div>
-          ))}
-          {FLOATING_PLATFORMS.slice(2).map((p, i) => (
-            <div
-              key={p}
-              className="pointer-events-none absolute hidden select-none lg:flex"
-              style={{
-                right: i === 0 ? "-8.5rem" : i === 1 ? "-7rem" : "-9.5rem",
-                top: i === 0 ? "15%" : i === 1 ? "50%" : "78%",
-              }}
-            >
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-3.5 py-2 text-sm font-semibold shadow-float">
-                <span className="h-2 w-2 rounded-full" style={{ background: colorForPlatform(p) }} />
-                {p === "Prime Video" ? "Prime" : p}
-              </span>
-            </div>
-          ))}
-
-          {/* Main input card */}
-          <div className="relative overflow-hidden rounded-2xl border border-border bg-white shadow-float">
-            <textarea
-              ref={textareaRef}
+        {/* Text input bar */}
+        <div className="mt-8 w-full">
+          <div className={cn(
+            "flex items-center gap-2 rounded-2xl border border-border bg-card/60 px-4 py-3 backdrop-blur-sm transition-all",
+            "focus-within:border-primary/50 focus-within:bg-card/80",
+          )}>
+            <input
+              ref={inputRef}
+              type="text"
               value={text}
               onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSubmit();
-                }
-              }}
-              rows={2}
-              placeholder="una película de acción para ver esta noche..."
-              className="w-full resize-none bg-transparent px-5 pb-2 pt-5 text-base text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
+              onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
+              placeholder="o escribí acá…"
+              disabled={isLoading}
+              className="min-w-0 flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none disabled:opacity-50"
             />
-            <div className="flex items-center justify-between border-t border-border px-4 py-3">
-              <div className="flex items-center gap-2">
-                <MicButton
-                  onTranscript={(t, isFinal) => {
-                    if (!t || !isFinal) return;
-                    setText((prev) => (prev ? `${prev.trim()} ${t}` : t));
-                    textareaRef.current?.focus();
-                  }}
-                  className="text-muted-foreground hover:text-foreground"
-                />
-                <span className="text-xs text-muted-foreground/60">
-                  Funciona con Netflix, Prime, Disney+ y más
+            <MicButton
+              onTranscript={(t, isFinal) => {
+                if (!t || !isFinal) return;
+                setText((prev) => (prev ? `${prev.trim()} ${t}` : t));
+                inputRef.current?.focus();
+              }}
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+            />
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={text.trim().length < 2 || isLoading}
+              className={cn(
+                "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-smooth",
+                text.trim().length >= 2 && !isLoading
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                  : "bg-muted text-muted-foreground/40 cursor-not-allowed",
+              )}
+              aria-label="Buscar"
+            >
+              <ArrowUp className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Settings toggle */}
+        <button
+          onClick={() => setShowSettings((v) => !v)}
+          className="mt-4 text-xs text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+        >
+          {showSettings ? "Ocultar ajustes ↑" : "Ajustes de plataformas y ubicación ↓"}
+        </button>
+
+        {showSettings && (
+          <div className="mt-4 w-full space-y-3 animate-fade-in">
+            {/* Platform chips */}
+            <div className="rounded-2xl border border-border bg-card/50 p-3 backdrop-blur-sm">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Plataformas
                 </span>
+                {selectedPlatforms.length > 0 &&
+                  JSON.stringify([...selectedPlatforms].sort()) !== JSON.stringify([...defaultPlatforms].sort()) && (
+                    <button onClick={() => onSaveDefaultPlatforms(selectedPlatforms)} className="text-[11px] text-primary hover:underline">
+                      Guardar
+                    </button>
+                  )}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {(PLATFORM_OPTIONS as Platform[]).map((p) => {
+                  const active = selectedPlatforms.includes(p);
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => togglePlatform(p)}
+                      style={active ? { borderColor: colorForPlatform(p), background: `${colorForPlatform(p)}22` } : undefined}
+                      className={cn(
+                        "inline-flex min-h-[28px] items-center gap-1 rounded-full border px-2.5 text-[11px] font-medium transition-smooth",
+                        active ? "text-foreground" : "border-border text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: colorForPlatform(p) }} />
+                      {p === "Star+" ? "Star+" : p}
+                    </button>
+                  );
+                })}
+              </div>
+              {selectedPlatforms.length === 0 && (
+                <p className="mt-1.5 text-[11px] text-muted-foreground/60">Todas las plataformas.</p>
+              )}
+            </div>
+
+            {/* Location toggle */}
+            <div className="flex items-center justify-between rounded-2xl border border-border bg-card/50 px-3 py-2.5 backdrop-blur-sm">
+              <div>
+                <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <MapPin className="h-3 w-3 text-primary" />
+                  Usar ubicación
+                </div>
+                {useLocation && weatherLoading && <p className="mt-0.5 text-[11px] text-muted-foreground">Leyendo clima…</p>}
+                {useLocation && !weatherLoading && weather && <p className="mt-0.5 text-[11px] text-primary">{weatherHintShort(weather)}</p>}
+                {useLocation && !weatherLoading && !weather && <p className="mt-0.5 text-[11px] text-destructive">Sin acceso al clima.</p>}
+                {!useLocation && <p className="mt-0.5 text-[11px] text-muted-foreground/60">Suma el clima al contexto.</p>}
               </div>
               <button
                 type="button"
-                onClick={handleSubmit}
-                disabled={text.trim().length < 2}
-                className={cn(
-                  "inline-flex h-9 w-9 items-center justify-center rounded-full transition-smooth",
-                  text.trim().length >= 2
-                    ? "bg-foreground text-background hover:bg-foreground/85"
-                    : "bg-muted text-muted-foreground/40 cursor-not-allowed",
-                )}
-                aria-label="Buscar"
+                role="switch"
+                aria-checked={useLocation}
+                onClick={() => onToggleLocation(!useLocation)}
+                className={cn("relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors", useLocation ? "bg-primary" : "bg-border")}
               >
-                <ArrowUp className="h-4 w-4" />
+                <span className={cn("inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform", useLocation ? "translate-x-4" : "translate-x-0.5")} />
               </button>
             </div>
           </div>
-        </div>
-
-        <p className="mt-4 text-xs text-muted-foreground">
-          Gratis{isGuest ? " — sin cuenta necesaria" : ""}
-        </p>
-      </div>
-
-      {/* Settings: platforms + location */}
-      <div className="mt-10 w-full max-w-xl space-y-4">
-        {/* Platform selector */}
-        <div className="rounded-2xl border border-border bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              ¿Dónde buscamos?
-            </span>
-            {selectedPlatforms.length > 0 &&
-              JSON.stringify([...selectedPlatforms].sort()) !==
-                JSON.stringify([...defaultPlatforms].sort()) && (
-                <button
-                  onClick={() => onSaveDefaultPlatforms(selectedPlatforms)}
-                  className="text-[11px] text-primary hover:underline"
-                >
-                  Guardar como predeterminadas
-                </button>
-              )}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {(PLATFORM_OPTIONS as Platform[]).map((p) => {
-              const active = selectedPlatforms.includes(p);
-              return (
-                <button
-                  key={p}
-                  onClick={() => togglePlatform(p)}
-                  style={active ? { borderColor: colorForPlatform(p), background: `${colorForPlatform(p)}18` } : undefined}
-                  className={cn(
-                    "inline-flex min-h-[32px] items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-smooth",
-                    active ? "text-foreground" : "border-border text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: colorForPlatform(p) }} />
-                  {p === "Star+" ? "Star+ (Disney+)" : p}
-                </button>
-              );
-            })}
-          </div>
-          {selectedPlatforms.length === 0 && (
-            <p className="mt-2 text-[11px] text-muted-foreground">
-              Buscamos en todas las plataformas.
-            </p>
-          )}
-        </div>
-
-        {/* Location toggle */}
-        <div className="flex items-center justify-between rounded-2xl border border-border bg-white px-4 py-3 shadow-sm">
-          <div>
-            <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              <MapPin className="h-3 w-3 text-primary" />
-              Usar mi ubicación
-            </div>
-            {useLocation && weatherLoading && (
-              <p className="mt-0.5 text-[11px] text-muted-foreground">Leyendo clima…</p>
-            )}
-            {useLocation && !weatherLoading && weather && (
-              <p className="mt-0.5 text-[11px] text-primary">{weatherHintShort(weather)}</p>
-            )}
-            {useLocation && !weatherLoading && !weather && (
-              <p className="mt-0.5 text-[11px] text-destructive">No pudimos leer el clima.</p>
-            )}
-            {!useLocation && (
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
-                Suma el clima actual al contexto.
-              </p>
-            )}
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={useLocation}
-            onClick={() => onToggleLocation(!useLocation)}
-            className={cn(
-              "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
-              useLocation ? "bg-primary" : "bg-border",
-            )}
-          >
-            <span
-              className={cn(
-                "inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform",
-                useLocation ? "translate-x-5" : "translate-x-0.5",
-              )}
-            />
-          </button>
-        </div>
+        )}
       </div>
     </section>
   );
 }
 
-/* ===================== CHAT SCREEN ===================== */
+/* ===================== CHAT ===================== */
 
 function ChatScreen({
   messages,
@@ -581,11 +533,11 @@ function ChatScreen({
   onFeedback: (msgId: string, title: string, platform: string, sentiment: "love" | "like" | "dislike" | "seen") => void;
   onNewSearch: () => void;
 }) {
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
 
   const handleSubmit = () => {
@@ -595,13 +547,13 @@ function ChatScreen({
   return (
     <section className="mx-auto flex max-w-2xl flex-col px-4 pb-6 pt-6 sm:px-6 animate-fade-in">
       {/* Chat window */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-white shadow-card">
-        {/* Window header */}
+      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-card">
+        {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
           <div className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded-full bg-red-400" />
-            <span className="h-3 w-3 rounded-full bg-yellow-400" />
-            <span className="h-3 w-3 rounded-full bg-green-400" />
+            <span className="h-3 w-3 rounded-full bg-red-500/70" />
+            <span className="h-3 w-3 rounded-full bg-yellow-500/70" />
+            <span className="h-3 w-3 rounded-full bg-green-500/70" />
             <span className="ml-2 text-xs font-semibold text-muted-foreground">CineAI</span>
           </div>
           <button
@@ -614,7 +566,7 @@ function ChatScreen({
         </div>
 
         {/* Messages */}
-        <div className="max-h-[65vh] overflow-y-auto px-5 py-5">
+        <div className="max-h-[60vh] overflow-y-auto px-5 py-5">
           <div className="space-y-5">
             {messages.map((msg) =>
               msg.role === "user" ? (
@@ -634,33 +586,28 @@ function ChatScreen({
             {isLoading && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground animate-fade-in">
                 <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                <span>Buscando algo perfecto…</span>
+                Buscando algo perfecto…
               </div>
             )}
           </div>
-          <div ref={messagesEndRef} />
+          <div ref={endRef} />
         </div>
       </div>
 
       {/* Input bar */}
-      <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-white shadow-card">
-        <div className="relative flex items-end">
-          <textarea
-            ref={inputRef}
-            value={inputText}
-            onChange={(e) => onInputChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSubmit();
-              }
-            }}
-            rows={1}
-            placeholder="Seguí pidiendo… algo más oscuro, solo Netflix…"
-            className="w-full resize-none bg-transparent px-5 pb-3 pt-4 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
-            style={{ maxHeight: "120px" }}
-          />
-        </div>
+      <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-card">
+        <textarea
+          ref={inputRef}
+          value={inputText}
+          onChange={(e) => onInputChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
+          }}
+          rows={1}
+          placeholder="Seguí pidiendo… algo más oscuro, solo Netflix…"
+          className="w-full resize-none bg-transparent px-5 pb-2 pt-4 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
+          style={{ maxHeight: "100px" }}
+        />
         <div className="flex items-center justify-between border-t border-border px-4 py-2">
           <MicButton
             onTranscript={(t, isFinal) => {
@@ -677,7 +624,7 @@ function ChatScreen({
             className={cn(
               "inline-flex h-8 w-8 items-center justify-center rounded-full transition-smooth",
               inputText.trim().length >= 2 && !isLoading
-                ? "bg-foreground text-background hover:bg-foreground/85"
+                ? "bg-primary text-primary-foreground hover:bg-primary/90"
                 : "bg-muted text-muted-foreground/40 cursor-not-allowed",
             )}
             aria-label="Enviar"
@@ -699,13 +646,13 @@ function ChatScreen({
   );
 }
 
-/* ===================== CHAT BUBBLES ===================== */
+/* ===================== BUBBLES ===================== */
 
 function UserBubble({ text }: { text: string }) {
   return (
     <div className="flex justify-end">
-      <div className="max-w-[80%] rounded-2xl rounded-tr-md bg-foreground px-4 py-3">
-        <p className="text-sm leading-relaxed text-background">{text}</p>
+      <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-primary/20 border border-primary/20 px-4 py-3">
+        <p className="text-sm leading-relaxed text-foreground">{text}</p>
       </div>
     </div>
   );
@@ -722,35 +669,29 @@ function AssistantBubble({
 }) {
   const { data } = msg;
   if (!data) return null;
-
   const { main, alternatives } = data;
   const mainFeedback = msg.feedbackGiven?.[main.title] ?? null;
-  const deepLink = deepLinkFor(main.platform, main.title);
 
   return (
     <div className="flex flex-col gap-3">
       {/* Main recommendation */}
-      <div className="max-w-[88%] rounded-2xl rounded-tl-md border border-border bg-white px-4 py-4 shadow-sm">
+      <div className="max-w-[88%] rounded-2xl rounded-tl-sm border border-border bg-card/40 px-4 py-4">
         <p className="text-sm leading-relaxed text-foreground">
           Te recomiendo{" "}
-          <strong className="font-bold">{main.title}</strong>{" "}
+          <strong className="font-bold text-foreground">{main.title}</strong>{" "}
           <span className="text-muted-foreground">({main.duration})</span>
           {" — "}
-          {main.reason}
-          {" "}
+          {main.reason}{" "}
           Disponible en{" "}
-          <strong className="font-bold" style={{ color: colorForPlatform(main.platform) }}>
-            {main.platform}
-          </strong>
-          .
+          <strong style={{ color: colorForPlatform(main.platform) }}>{main.platform}</strong>.
         </p>
 
         <div className="mt-3 flex items-center gap-2">
           <a
-            href={deepLink}
+            href={deepLinkFor(main.platform, main.title)}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-foreground transition-smooth hover:border-foreground"
+            className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-smooth hover:border-primary/50 hover:text-primary"
           >
             <ExternalLink className="h-3 w-3" />
             Ver en {main.platform}
@@ -758,7 +699,7 @@ function AssistantBubble({
         </div>
 
         {!isGuest && (
-          <div className="mt-3 border-t border-border pt-3">
+          <div className="mt-3 border-t border-border/60 pt-3">
             <FeedbackRow
               feedback={mainFeedback}
               onLove={() => onFeedback(main.title, main.platform, "love")}
@@ -771,156 +712,92 @@ function AssistantBubble({
       </div>
 
       {/* Alternatives */}
-      {alternatives.length > 0 && (
-        <div className="max-w-[85%] space-y-2">
-          {alternatives.map((alt) => {
-            const altFeedback = msg.feedbackGiven?.[alt.title] ?? null;
-            return (
-              <div
-                key={alt.title}
-                className="rounded-xl border border-border bg-muted/40 px-4 py-3"
+      {alternatives.map((alt) => {
+        const altFeedback = msg.feedbackGiven?.[alt.title] ?? null;
+        return (
+          <div key={alt.title} className="max-w-[82%] rounded-xl border border-border/60 bg-card/20 px-4 py-3">
+            <p className="text-xs leading-relaxed text-foreground/80">
+              O también:{" "}
+              <strong className="font-semibold">{alt.title}</strong> en{" "}
+              <span style={{ color: colorForPlatform(alt.platform) }}>{alt.platform}</span>
+              {" — "}
+              <span className="text-muted-foreground">{alt.reason}</span>
+            </p>
+            <div className="mt-2 flex items-center justify-between">
+              <a
+                href={deepLinkFor(alt.platform, alt.title)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
               >
-                <p className="text-xs leading-relaxed text-foreground">
-                  O también:{" "}
-                  <strong className="font-semibold">{alt.title}</strong>
-                  {" "}en{" "}
-                  <span className="font-medium" style={{ color: colorForPlatform(alt.platform) }}>
-                    {alt.platform}
-                  </span>
-                  {" — "}
-                  <span className="text-muted-foreground">{alt.reason}</span>
-                </p>
-                <div className="mt-2 flex items-center justify-between gap-2">
-                  <a
-                    href={deepLinkFor(alt.platform, alt.title)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
-                  >
-                    <ExternalLink className="h-2.5 w-2.5" />
-                    {alt.platform}
-                  </a>
-                  {!isGuest && (
-                    <CompactFeedback
-                      feedback={altFeedback}
-                      onLike={() => onFeedback(alt.title, alt.platform, "like")}
-                      onDislike={() => onFeedback(alt.title, alt.platform, "dislike")}
-                      onSeen={() => onFeedback(alt.title, alt.platform, "seen")}
-                    />
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+                <ExternalLink className="h-2.5 w-2.5" />
+                {alt.platform}
+              </a>
+              {!isGuest && (
+                <CompactFeedback
+                  feedback={altFeedback}
+                  onLike={() => onFeedback(alt.title, alt.platform, "like")}
+                  onDislike={() => onFeedback(alt.title, alt.platform, "dislike")}
+                  onSeen={() => onFeedback(alt.title, alt.platform, "seen")}
+                />
+              )}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 /* ===================== FEEDBACK ===================== */
 
-function FeedbackRow({
-  feedback,
-  onLove,
-  onLike,
-  onDislike,
-  onSeen,
-}: {
+function FeedbackRow({ feedback, onLove, onLike, onDislike, onSeen }: {
   feedback: "love" | "like" | "dislike" | "seen" | null;
-  onLove: () => void;
-  onLike: () => void;
-  onDislike: () => void;
-  onSeen: () => void;
+  onLove: () => void; onLike: () => void; onDislike: () => void; onSeen: () => void;
 }) {
-  if (feedback === "love") {
-    return (
-      <div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
-        <Heart className="h-3.5 w-3.5 fill-current" />
-        ¡Te encanta! Lo recordamos.
-      </div>
-    );
-  }
-  if (feedback === "like") {
-    return (
-      <div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
-        <ThumbsUp className="h-3.5 w-3.5" />
-        Te gusta. Lo recordamos.
-      </div>
-    );
-  }
-  if (feedback === "dislike" || feedback === "seen") {
-    return (
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <AlertTriangle className="h-3.5 w-3.5" />
-        {feedback === "seen" ? "Marcado como ya vista." : "Descartado."}
-      </div>
-    );
-  }
-
+  if (feedback === "love") return (
+    <div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
+      <Heart className="h-3.5 w-3.5 fill-current" />¡Te encanta! Lo recordamos.
+    </div>
+  );
+  if (feedback === "like") return (
+    <div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
+      <ThumbsUp className="h-3.5 w-3.5" />Te gusta. Lo recordamos.
+    </div>
+  );
+  if (feedback === "dislike" || feedback === "seen") return (
+    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <AlertTriangle className="h-3.5 w-3.5" />
+      {feedback === "seen" ? "Marcado como ya vista." : "Descartado."}
+    </div>
+  );
   return (
     <div className="flex items-center gap-3">
-      <button
-        onClick={onLove}
-        className="group flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-primary"
-      >
-        <Heart className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
-        <span>Amo</span>
-      </button>
-      <button
-        onClick={onLike}
-        className="group flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-primary"
-      >
-        <ThumbsUp className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
-        <span>Va</span>
-      </button>
-      <button
-        onClick={onDislike}
-        className="group flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-destructive"
-      >
-        <ThumbsDown className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
-        <span>No</span>
-      </button>
-      <button
-        onClick={onSeen}
-        className="group flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <EyeOff className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
-        <span>Ya la vi</span>
-      </button>
+      {([
+        { label: "Amo", icon: Heart, action: onLove, hover: "hover:text-primary" },
+        { label: "Va", icon: ThumbsUp, action: onLike, hover: "hover:text-primary" },
+        { label: "No", icon: ThumbsDown, action: onDislike, hover: "hover:text-destructive" },
+        { label: "Ya la vi", icon: EyeOff, action: onSeen, hover: "hover:text-foreground" },
+      ] as const).map(({ label, icon: Icon, action, hover }) => (
+        <button key={label} onClick={action}
+          className={cn("group flex items-center gap-1 text-xs text-muted-foreground transition-colors", hover)}>
+          <Icon className="h-3.5 w-3.5" />{label}
+        </button>
+      ))}
     </div>
   );
 }
 
-function CompactFeedback({
-  feedback,
-  onLike,
-  onDislike,
-  onSeen,
-}: {
+function CompactFeedback({ feedback, onLike, onDislike, onSeen }: {
   feedback: "love" | "like" | "dislike" | "seen" | null;
-  onLike: () => void;
-  onDislike: () => void;
-  onSeen: () => void;
+  onLike: () => void; onDislike: () => void; onSeen: () => void;
 }) {
-  if (feedback) {
-    return (
-      <span className="text-[11px] text-muted-foreground">
-        {feedback === "like" || feedback === "love" ? "✓ Guardado" : "✗ Descartado"}
-      </span>
-    );
-  }
+  if (feedback) return <span className="text-[11px] text-muted-foreground">{feedback === "like" || feedback === "love" ? "✓" : "✗"}</span>;
   return (
     <div className="flex items-center gap-2">
-      <button onClick={onLike} className="text-muted-foreground transition-colors hover:text-primary" title="Me gusta">
-        <ThumbsUp className="h-3.5 w-3.5" />
-      </button>
-      <button onClick={onDislike} className="text-muted-foreground transition-colors hover:text-destructive" title="No me gusta">
-        <ThumbsDown className="h-3.5 w-3.5" />
-      </button>
-      <button onClick={onSeen} className="text-muted-foreground transition-colors hover:text-foreground" title="Ya la vi">
-        <EyeOff className="h-3.5 w-3.5" />
-      </button>
+      <button onClick={onLike} className="text-muted-foreground hover:text-primary" title="Me gusta"><ThumbsUp className="h-3 w-3" /></button>
+      <button onClick={onDislike} className="text-muted-foreground hover:text-destructive" title="No me gusta"><ThumbsDown className="h-3 w-3" /></button>
+      <button onClick={onSeen} className="text-muted-foreground hover:text-foreground" title="Ya la vi"><EyeOff className="h-3 w-3" /></button>
     </div>
   );
 }

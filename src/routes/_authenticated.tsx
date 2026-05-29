@@ -69,15 +69,15 @@ function AuthLayout() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-40 border-b border-border bg-white/80 backdrop-blur-md">
+      <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4 sm:px-8">
           <Link
             to="/"
             onClick={() => window.dispatchEvent(new CustomEvent("que-veo:go-home"))}
             className="inline-flex items-center gap-2"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground">
-              <Sparkles className="h-4 w-4 text-background" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary">
+              <Sparkles className="h-4 w-4 text-primary-foreground" />
             </div>
             <span className="text-sm font-bold text-foreground">QueVeo</span>
           </Link>
@@ -88,7 +88,7 @@ function AuthLayout() {
                 <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
                   <AlertDialogTrigger asChild>
                     <button
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
                       aria-label="Resetear mis intereses"
                       title="Resetear mis intereses"
                     >
@@ -155,7 +155,7 @@ function AuthLayout() {
                 </AlertDialog>
                 <button
                   onClick={handleLogout}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
                   aria-label="Cerrar sesión"
                 >
                   <LogOut className="h-4 w-4" />
