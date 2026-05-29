@@ -25,12 +25,11 @@ import {
 import { recommendConversational } from "@/lib/recommendations.functions";
 import { recordTitleFeedback } from "@/lib/feedback.functions";
 import { getProfile, setDefaultPlatforms } from "@/lib/profile.functions";
-import { Onboarding } from "@/components/Onboarding";
 import { VoiceOrb } from "@/components/VoiceOrb";
+import { fetchPostersClient } from "@/lib/itunes";
 import {
   readGuestSeed,
   seedForServer,
-  isOnboarded,
   bumpSearchCount,
   dismissLoginNudge,
 } from "@/lib/guestSeed";
@@ -83,6 +82,7 @@ function HomePage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState("");
   const [excluded, setExcluded] = useState<string[]>([]);
+  const [posters, setPosters] = useState<Record<string, string | null>>({});
 
   const [session, setSession] = useState<Session | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
@@ -98,13 +98,6 @@ function HomePage() {
 
   const [guestPlatforms, setGuestPlatforms] = useState<Platform[]>(() => readGuestPlatforms());
   const [guestSeedVersion, setGuestSeedVersion] = useState(0);
-
-  const [showOnboarding, setShowOnboarding] = useState(false);
-  useEffect(() => {
-    if (!sessionReady || !isGuest) return;
-    if (isOnboarded()) return;
-    setShowOnboarding(true);
-  }, [sessionReady, isGuest]);
 
   const [showLoginNudge, setShowLoginNudge] = useState(false);
   useEffect(() => {
@@ -155,6 +148,7 @@ function HomePage() {
       setMessages([]);
       setInputText("");
       setExcluded([]);
+      setPosters({});
     };
     window.addEventListener("que-veo:go-home", handler);
     return () => window.removeEventListener("que-veo:go-home", handler);
@@ -164,12 +158,14 @@ function HomePage() {
     const trimmed = text.trim();
     if (trimmed.length < 2) return;
 
+    const isFirstMessage = step === "home";
     const userMsg: ChatMessage = { id: uid(), role: "user", text: trimmed };
     const nextMessages = [...messages, userMsg];
-    setMessages(nextMessages);
+
     setInputText("");
     setIsLoading(true);
-    if (step === "home") setStep("chat");
+    // For subsequent turns in chat: show user message immediately
+    if (!isFirstMessage) setMessages(nextMessages);
 
     const ctx = inferContext();
     const aiHistory = nextMessages.map((m) => ({
@@ -183,7 +179,8 @@ function HomePage() {
     }));
 
     try {
-      const data = await recommendConversational({
+      // First message: minimum 1.5s on home so the orb stays visible while thinking
+      const apiPromise = recommendConversational({
         data: {
           messages: aiHistory,
           platforms: effectivePlatforms,
@@ -194,15 +191,32 @@ function HomePage() {
           profileSeed: isGuest ? seedForServer(readGuestSeed()) : undefined,
         },
       });
+      const delayPromise = isFirstMessage
+        ? new Promise<void>((r) => setTimeout(r, 1500))
+        : Promise.resolve();
+      const [data] = await Promise.all([apiPromise, delayPromise]);
 
-      setMessages((prev) => [
-        ...prev,
-        { id: uid(), role: "assistant", text: "", data, feedbackGiven: {} },
-      ]);
+      const aiMsg: ChatMessage = { id: uid(), role: "assistant", text: "", data, feedbackGiven: {} };
+
+      if (isFirstMessage) {
+        // Transition to chat only after result is ready
+        setMessages([userMsg, aiMsg]);
+        setStep("chat");
+      } else {
+        setMessages((prev) => [...prev, aiMsg]);
+      }
+
       setExcluded((prev) => {
         const newTitles = [data.main.title, ...data.alternatives.map((a) => a.title)];
         return [...prev, ...newTitles.filter((t) => !prev.includes(t))];
       });
+
+      // Load posters in background after result appears
+      fetchPostersClient([
+        { title: data.main.title, type: data.main.type },
+        ...data.alternatives.map((a) => ({ title: a.title, type: a.type })),
+      ]).then((map) => setPosters((prev) => ({ ...prev, ...map })));
+
       if (isGuest) {
         bumpSearchCount();
         setGuestSeedVersion((v) => v + 1);
@@ -210,8 +224,7 @@ function HomePage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Algo salió mal.";
       toast.error(msg, { duration: 6000 });
-      setMessages(messages);
-      if (messages.length === 0) setStep("home");
+      if (!isFirstMessage) setMessages(messages);
     } finally {
       setIsLoading(false);
     }
@@ -248,10 +261,6 @@ function HomePage() {
 
   return (
     <main className="min-h-[calc(100vh-57px)]">
-      {showOnboarding && (
-        <Onboarding onDone={() => { setShowOnboarding(false); setGuestSeedVersion((v) => v + 1); }} />
-      )}
-
       {step === "home" && (
         <HomeScreen
           onSubmit={submit}
@@ -276,6 +285,7 @@ function HomePage() {
           isLoading={isLoading}
           isGuest={isGuest}
           inputText={inputText}
+          posters={posters}
           onInputChange={setInputText}
           onSubmit={submit}
           onFeedback={handleFeedback}
@@ -284,6 +294,7 @@ function HomePage() {
             setMessages([]);
             setInputText("");
             setExcluded([]);
+            setPosters({});
           }}
         />
       )}
@@ -473,7 +484,7 @@ function HomeScreen({
                       )}
                     >
                       <span className="h-1.5 w-1.5 rounded-full" style={{ background: colorForPlatform(p) }} />
-                      {p === "Star+" ? "Star+" : p}
+                      {p}
                     </button>
                   );
                 })}
@@ -519,6 +530,7 @@ function ChatScreen({
   isLoading,
   isGuest,
   inputText,
+  posters,
   onInputChange,
   onSubmit,
   onFeedback,
@@ -528,6 +540,7 @@ function ChatScreen({
   isLoading: boolean;
   isGuest: boolean;
   inputText: string;
+  posters: Record<string, string | null>;
   onInputChange: (v: string) => void;
   onSubmit: (text: string) => void;
   onFeedback: (msgId: string, title: string, platform: string, sentiment: "love" | "like" | "dislike" | "seen") => void;
@@ -554,7 +567,7 @@ function ChatScreen({
             <span className="h-3 w-3 rounded-full bg-red-500/70" />
             <span className="h-3 w-3 rounded-full bg-yellow-500/70" />
             <span className="h-3 w-3 rounded-full bg-green-500/70" />
-            <span className="ml-2 text-xs font-semibold text-muted-foreground">CineAI</span>
+            <span className="ml-2 text-xs font-semibold text-muted-foreground">Cinéfilo</span>
           </div>
           <button
             onClick={onNewSearch}
@@ -566,7 +579,7 @@ function ChatScreen({
         </div>
 
         {/* Messages */}
-        <div className="max-h-[60vh] overflow-y-auto px-5 py-5">
+        <div className="max-h-[65vh] overflow-y-auto px-5 py-5">
           <div className="space-y-5">
             {messages.map((msg) =>
               msg.role === "user" ? (
@@ -576,6 +589,7 @@ function ChatScreen({
                   key={msg.id}
                   msg={msg}
                   isGuest={isGuest}
+                  posters={posters}
                   onFeedback={(title, platform, sentiment) =>
                     onFeedback(msg.id, title, platform, sentiment)
                   }
@@ -661,45 +675,90 @@ function UserBubble({ text }: { text: string }) {
 function AssistantBubble({
   msg,
   isGuest,
+  posters,
   onFeedback,
 }: {
   msg: ChatMessage;
   isGuest: boolean;
+  posters: Record<string, string | null>;
   onFeedback: (title: string, platform: string, sentiment: "love" | "like" | "dislike" | "seen") => void;
 }) {
   const { data } = msg;
   if (!data) return null;
   const { main, alternatives } = data;
   const mainFeedback = msg.feedbackGiven?.[main.title] ?? null;
+  const mainPoster = posters[main.title];
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Main recommendation */}
-      <div className="max-w-[88%] rounded-2xl rounded-tl-sm border border-border bg-white px-4 py-4">
-        <p className="text-sm leading-relaxed text-foreground">
-          Te recomiendo{" "}
-          <strong className="font-bold text-foreground">{main.title}</strong>{" "}
-          <span className="text-muted-foreground">({main.duration})</span>
-          {" — "}
-          {main.reason}{" "}
-          Disponible en{" "}
-          <strong style={{ color: colorForPlatform(main.platform) }}>{main.platform}</strong>.
-        </p>
-
-        <div className="mt-3 flex items-center gap-2">
-          <a
-            href={deepLinkFor(main.platform, main.title)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-smooth hover:border-primary/50 hover:text-primary"
+      {/* Main recommendation — WhatsApp-style visual card */}
+      <div className="max-w-[90%] overflow-hidden rounded-2xl rounded-tl-sm border border-border bg-white shadow-sm">
+        <div className="flex">
+          {/* Poster / color block */}
+          <div
+            className="relative h-[170px] w-[113px] shrink-0 overflow-hidden"
+            style={!mainPoster ? { background: `${colorForPlatform(main.platform)}18` } : undefined}
           >
-            <ExternalLink className="h-3 w-3" />
-            Ver en {main.platform}
-          </a>
+            {mainPoster ? (
+              <img
+                src={mainPoster}
+                alt={main.title}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div className="flex h-full w-full flex-col items-center justify-center gap-1 px-2">
+                <span
+                  className="text-2xl font-black opacity-20"
+                  style={{ color: colorForPlatform(main.platform) }}
+                >
+                  {main.title.charAt(0)}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Content */}
+          <div className="flex flex-1 flex-col justify-between p-4">
+            <div>
+              {/* Platform badge */}
+              <div className="mb-2 flex items-center gap-1.5">
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ background: colorForPlatform(main.platform) }}
+                />
+                <span
+                  className="text-[11px] font-semibold"
+                  style={{ color: colorForPlatform(main.platform) }}
+                >
+                  {main.platform}
+                </span>
+              </div>
+
+              <h3 className="text-sm font-bold leading-tight text-foreground">{main.title}</h3>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {main.duration} · {main.type}
+              </p>
+              <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-foreground/70">
+                {main.reason}
+              </p>
+            </div>
+
+            <a
+              href={deepLinkFor(main.platform, main.title)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold text-white transition-opacity hover:opacity-90"
+              style={{ background: colorForPlatform(main.platform) }}
+            >
+              <ExternalLink className="h-3 w-3" />
+              Ver en {main.platform}
+            </a>
+          </div>
         </div>
 
+        {/* Feedback */}
         {!isGuest && (
-          <div className="mt-3 border-t border-border/60 pt-3">
+          <div className="border-t border-border/60 px-4 py-2.5">
             <FeedbackRow
               feedback={mainFeedback}
               onLove={() => onFeedback(main.title, main.platform, "love")}
@@ -711,40 +770,79 @@ function AssistantBubble({
         )}
       </div>
 
-      {/* Alternatives */}
-      {alternatives.map((alt) => {
-        const altFeedback = msg.feedbackGiven?.[alt.title] ?? null;
-        return (
-          <div key={alt.title} className="max-w-[82%] rounded-xl border border-border/60 bg-muted/60 px-4 py-3">
-            <p className="text-xs leading-relaxed text-foreground/80">
-              O también:{" "}
-              <strong className="font-semibold">{alt.title}</strong> en{" "}
-              <span style={{ color: colorForPlatform(alt.platform) }}>{alt.platform}</span>
-              {" — "}
-              <span className="text-muted-foreground">{alt.reason}</span>
-            </p>
-            <div className="mt-2 flex items-center justify-between">
-              <a
-                href={deepLinkFor(alt.platform, alt.title)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
-              >
-                <ExternalLink className="h-2.5 w-2.5" />
-                {alt.platform}
-              </a>
-              {!isGuest && (
-                <CompactFeedback
-                  feedback={altFeedback}
-                  onLike={() => onFeedback(alt.title, alt.platform, "like")}
-                  onDislike={() => onFeedback(alt.title, alt.platform, "dislike")}
-                  onSeen={() => onFeedback(alt.title, alt.platform, "seen")}
-                />
-              )}
-            </div>
+      {/* Alternatives — horizontal scroll carousel */}
+      {alternatives.length > 0 && (
+        <div className="max-w-[90%]">
+          <p className="mb-2 text-[11px] text-muted-foreground">También podría ser…</p>
+          <div className="flex gap-2.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+            {alternatives.map((alt) => {
+              const altPoster = posters[alt.title];
+              const altFeedback = msg.feedbackGiven?.[alt.title] ?? null;
+              return (
+                <div
+                  key={alt.title}
+                  className="flex-none w-[130px] overflow-hidden rounded-xl border border-border bg-white shadow-sm"
+                >
+                  {/* Mini poster or platform color block */}
+                  <div
+                    className="h-[80px] overflow-hidden"
+                    style={!altPoster ? { background: `${colorForPlatform(alt.platform)}15` } : undefined}
+                  >
+                    {altPoster ? (
+                      <img
+                        src={altPoster}
+                        alt={alt.title}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center">
+                        <span
+                          className="text-xs font-black opacity-25"
+                          style={{ color: colorForPlatform(alt.platform) }}
+                        >
+                          {alt.title.charAt(0)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-2.5">
+                    <p className="line-clamp-2 text-[11px] font-semibold leading-tight text-foreground">
+                      {alt.title}
+                    </p>
+                    <div className="mt-1 flex items-center gap-1">
+                      <span
+                        className="h-1.5 w-1.5 rounded-full"
+                        style={{ background: colorForPlatform(alt.platform) }}
+                      />
+                      <span className="text-[10px] text-muted-foreground">{alt.platform}</span>
+                    </div>
+
+                    <div className="mt-2 flex items-center justify-between">
+                      <a
+                        href={deepLinkFor(alt.platform, alt.title)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10px] text-muted-foreground hover:text-foreground"
+                      >
+                        Ver →
+                      </a>
+                      {!isGuest && (
+                        <CompactFeedback
+                          feedback={altFeedback}
+                          onLike={() => onFeedback(alt.title, alt.platform, "like")}
+                          onDislike={() => onFeedback(alt.title, alt.platform, "dislike")}
+                          onSeen={() => onFeedback(alt.title, alt.platform, "seen")}
+                        />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        );
-      })}
+        </div>
+      )}
     </div>
   );
 }
@@ -794,7 +892,7 @@ function CompactFeedback({ feedback, onLike, onDislike, onSeen }: {
 }) {
   if (feedback) return <span className="text-[11px] text-muted-foreground">{feedback === "like" || feedback === "love" ? "✓" : "✗"}</span>;
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5">
       <button onClick={onLike} className="text-muted-foreground hover:text-primary" title="Me gusta"><ThumbsUp className="h-3 w-3" /></button>
       <button onClick={onDislike} className="text-muted-foreground hover:text-destructive" title="No me gusta"><ThumbsDown className="h-3 w-3" /></button>
       <button onClick={onSeen} className="text-muted-foreground hover:text-foreground" title="Ya la vi"><EyeOff className="h-3 w-3" /></button>

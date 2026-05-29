@@ -76,14 +76,14 @@ function LoginPage() {
         <div className="mb-6 text-center">
           <div className="mb-3 inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
             <Sparkles className="h-3.5 w-3.5 text-primary" />
-            ¿Qué Veo?
+            Cinéfilo
           </div>
           <h1 className="text-3xl font-bold text-foreground">
             {mode === "signin" ? "Bienvenido de vuelta" : "Guardá tu perfil de gusto"}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {mode === "signin"
-              ? "Ingresá para recuperar tus Momentos y plataformas."
+              ? "Ingresá para recuperar tus preferencias y plataformas."
               : "Para que las recomendaciones se vuelvan tuyas. Sin emails de marketing, sin compartir datos."}
           </p>
         </div>

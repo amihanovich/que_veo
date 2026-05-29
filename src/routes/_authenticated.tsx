@@ -79,7 +79,7 @@ function AuthLayout() {
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground">
               <Sparkles className="h-4 w-4 text-background" />
             </div>
-            <span className="text-sm font-bold text-foreground">QueVeo</span>
+            <span className="text-sm font-bold text-foreground">Cinéfilo</span>
           </Link>
 
           <div className="flex items-center gap-2">
