@@ -363,44 +363,40 @@ function HomeScreen({
   };
 
   return (
-    <section className="relative flex min-h-[calc(100vh-57px)] flex-col items-center justify-center overflow-hidden px-6 py-12 animate-fade-in">
-      {/* Background gradients */}
+    <section className="relative flex min-h-[calc(100vh-49px)] flex-col items-center justify-center overflow-hidden px-6 pb-40 pt-12 animate-fade-in">
+      {/* Subtle ambient gradient — barely perceptible */}
       <div className="pointer-events-none absolute inset-0" aria-hidden>
         <div
-          className="absolute left-1/2 top-0 h-[600px] w-[600px] -translate-x-1/2 -translate-y-1/3 rounded-full"
-          style={{ background: "radial-gradient(circle, oklch(0.51 0.22 277 / 0.06) 0%, transparent 70%)" }}
-        />
-        <div
-          className="absolute bottom-0 right-1/4 h-[400px] w-[400px] rounded-full"
-          style={{ background: "radial-gradient(circle, oklch(0.60 0.18 290 / 0.04) 0%, transparent 70%)" }}
+          className="absolute left-1/2 top-0 h-[500px] w-[500px] -translate-x-1/2 -translate-y-1/4 rounded-full"
+          style={{ background: "radial-gradient(circle, oklch(0.50 0.22 277 / 0.04) 0%, transparent 70%)" }}
         />
       </div>
 
       {/* Login nudge */}
       {showLoginNudge && (
         <div className="absolute top-4 left-1/2 z-20 w-full max-w-sm -translate-x-1/2 px-4 animate-fade-in">
-          <div className="rounded-2xl border border-primary/25 bg-white/90 p-4 backdrop-blur-sm">
-            <div className="flex items-start justify-between gap-3">
+          <div className="overflow-hidden rounded-2xl bg-white shadow-float">
+            <div className="flex items-start justify-between gap-3 p-4">
               <div>
-                <p className="text-sm font-semibold text-foreground">Guardá tu perfil</p>
+                <p className="text-[13px] font-semibold text-foreground">Guardá tu perfil</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   Creá tu cuenta para guardar plataformas y preferencias.
                 </p>
-                <div className="mt-2 flex gap-2">
-                  <Link to="/login" className="inline-flex rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary/90">
-                    Crear cuenta →
+                <div className="mt-3 flex gap-2">
+                  <Link to="/login" className="inline-flex rounded-full bg-foreground px-3 py-1.5 text-[11px] font-semibold text-background transition-opacity hover:opacity-80">
+                    Crear cuenta
                   </Link>
-                  <button onClick={onDismissLoginNudge} className="text-xs text-muted-foreground hover:text-foreground">Ahora no</button>
+                  <button onClick={onDismissLoginNudge} className="text-[11px] text-muted-foreground hover:text-foreground">Ahora no</button>
                 </div>
               </div>
-              <button onClick={onDismissLoginNudge} className="text-muted-foreground hover:text-foreground">✕</button>
+              <button onClick={onDismissLoginNudge} className="text-muted-foreground/50 transition-colors hover:text-foreground">✕</button>
             </div>
           </div>
         </div>
       )}
 
       {/* Center content */}
-      <div className="relative z-10 flex w-full max-w-lg flex-col items-center text-center">
+      <div className="relative z-10 flex w-full max-w-md flex-col items-center text-center">
         {/* Orb */}
         <VoiceOrb
           onFinalTranscript={(t) => onSubmit(t)}
@@ -408,18 +404,15 @@ function HomeScreen({
         />
 
         {/* Headline */}
-        <h1 className="mt-8 font-serif text-4xl font-bold leading-tight text-foreground sm:text-5xl">
-          Tu sommelier de streaming
+        <h1 className="mt-10 font-serif text-[2.6rem] font-bold leading-[1.1] tracking-[-0.03em] text-foreground sm:text-5xl">
+          Tu sommelier<br />de streaming
         </h1>
 
-        {/* Platform ticker — always visible, scrolling */}
-        <div className="mt-4 w-full overflow-hidden" aria-hidden="true">
-          <div className="flex animate-platform-ticker gap-6 w-max">
+        {/* Platform ticker */}
+        <div className="mt-5 w-full overflow-hidden" aria-hidden="true">
+          <div className="flex animate-platform-ticker gap-7 w-max">
             {[...(PLATFORM_OPTIONS as Platform[]), ...(PLATFORM_OPTIONS as Platform[])].map((p, i) => (
-              <span
-                key={i}
-                className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] text-muted-foreground/50"
-              >
+              <span key={i} className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] text-muted-foreground/40">
                 <span className="h-1.5 w-1.5 rounded-full" style={{ background: colorForPlatform(p) }} />
                 {p}
               </span>
@@ -427,7 +420,7 @@ function HomeScreen({
           </div>
         </div>
 
-        <p className="mt-3 text-sm text-muted-foreground">
+        <p className="mt-4 text-[13px] text-muted-foreground">
           {isLoading ? (
             <span className="inline-flex items-center gap-1.5 text-primary">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -438,11 +431,11 @@ function HomeScreen({
           )}
         </p>
 
-        {/* Text input bar */}
-        <div className="mt-6 w-full">
+        {/* Input — Apple search bar style */}
+        <div className="mt-7 w-full">
           <div className={cn(
-            "flex items-center gap-2 rounded-2xl border border-border bg-white/80 px-4 py-3 backdrop-blur-sm transition-all",
-            "focus-within:border-primary/50 focus-within:bg-white/90",
+            "flex items-center gap-2 rounded-2xl bg-white px-4 py-3 shadow-card transition-all duration-200",
+            "focus-within:shadow-float",
           )}>
             <input
               ref={inputRef}
@@ -452,7 +445,7 @@ function HomeScreen({
               onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
               placeholder="una de acción, algo para llorar, comedia italiana…"
               disabled={isLoading}
-              className="min-w-0 flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none disabled:opacity-50"
+              className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground placeholder:text-muted-foreground/35 focus:outline-none disabled:opacity-50"
             />
             <MicButton
               onTranscript={(t, isFinal) => {
@@ -460,31 +453,28 @@ function HomeScreen({
                 setText((prev) => (prev ? `${prev.trim()} ${t}` : t));
                 inputRef.current?.focus();
               }}
-              className="shrink-0 text-muted-foreground hover:text-foreground"
+              className="shrink-0 text-muted-foreground/50 hover:text-muted-foreground"
             />
             <button
               type="button"
               onClick={handleSubmit}
               disabled={text.trim().length < 2 || isLoading}
               className={cn(
-                "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-smooth",
+                "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-all",
                 text.trim().length >= 2 && !isLoading
-                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                  : "bg-muted text-muted-foreground/40 cursor-not-allowed",
+                  ? "bg-foreground text-background hover:opacity-80"
+                  : "bg-muted text-muted-foreground/30 cursor-not-allowed",
               )}
               aria-label="Buscar"
             >
-              <ArrowUp className="h-4 w-4" />
+              <ArrowUp className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
 
-        {/* Platform filter chips — always visible */}
+        {/* Platform filter — minimal chips */}
         <div className="mt-4 w-full">
           <div className="flex items-center gap-2">
-            <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-              Filtrar
-            </span>
             <div className="flex flex-1 flex-wrap gap-1.5">
               {(PLATFORM_OPTIONS as Platform[]).map((p) => {
                 const active = selectedPlatforms.includes(p);
@@ -492,12 +482,12 @@ function HomeScreen({
                   <button
                     key={p}
                     onClick={() => togglePlatform(p)}
-                    style={active ? { borderColor: colorForPlatform(p), background: `${colorForPlatform(p)}18` } : undefined}
+                    style={active ? { color: colorForPlatform(p) } : undefined}
                     className={cn(
-                      "inline-flex min-h-[26px] items-center gap-1 rounded-full border px-2 text-[11px] font-medium transition-smooth",
+                      "inline-flex min-h-[24px] items-center gap-1 rounded-full px-2 text-[11px] font-medium transition-all",
                       active
-                        ? "text-foreground"
-                        : "border-border/60 text-muted-foreground/50 hover:border-border hover:text-muted-foreground",
+                        ? "bg-white shadow-xs"
+                        : "text-muted-foreground/40 hover:text-muted-foreground/70",
                     )}
                   >
                     <span className="h-1.5 w-1.5 rounded-full" style={{ background: colorForPlatform(p) }} />
@@ -507,37 +497,25 @@ function HomeScreen({
               })}
               {selectedPlatforms.length > 0 &&
                 JSON.stringify([...selectedPlatforms].sort()) !== JSON.stringify([...defaultPlatforms].sort()) && (
-                  <button
-                    onClick={() => onSaveDefaultPlatforms(selectedPlatforms)}
-                    className="text-[11px] text-primary hover:underline"
-                  >
+                  <button onClick={() => onSaveDefaultPlatforms(selectedPlatforms)} className="text-[11px] text-primary/70 hover:text-primary">
                     Guardar
                   </button>
                 )}
             </div>
-
-            {/* Location icon toggle */}
             <button
               type="button"
               title={useLocation ? (weather ? weatherHintShort(weather) : "Usando ubicación") : "Activar ubicación"}
               onClick={() => onToggleLocation(!useLocation)}
-              className={cn(
-                "shrink-0 rounded-full p-1.5 transition-colors",
-                useLocation ? "text-primary" : "text-muted-foreground/40 hover:text-muted-foreground",
-              )}
+              className={cn("shrink-0 p-1 transition-all", useLocation ? "text-primary" : "text-muted-foreground/30 hover:text-muted-foreground/60")}
             >
-              {weatherLoading ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <MapPin className="h-3.5 w-3.5" />
-              )}
+              {weatherLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <MapPin className="h-3 w-3" />}
             </button>
           </div>
         </div>
       </div>
 
-      {/* Poster marquee — content mood board at the bottom */}
-      <div className="absolute bottom-0 left-0 right-0 z-0 opacity-60">
+      {/* Poster marquee — mood board at bottom, very subtle */}
+      <div className="absolute bottom-0 left-0 right-0 z-0 opacity-40">
         <PosterMarquee />
       </div>
     </section>
@@ -579,20 +557,15 @@ function ChatScreen({
   };
 
   return (
-    <section className="mx-auto flex max-w-2xl flex-col px-4 pb-6 pt-6 sm:px-6 animate-fade-in">
+    <section className="mx-auto flex max-w-2xl flex-col px-4 pb-8 pt-6 sm:px-6 animate-fade-in">
       {/* Chat window */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-card">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-5 py-3">
-          <div className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded-full bg-red-500/70" />
-            <span className="h-3 w-3 rounded-full bg-yellow-500/70" />
-            <span className="h-3 w-3 rounded-full bg-green-500/70" />
-            <span className="ml-2 text-xs font-semibold text-muted-foreground">Cinéfilo</span>
-          </div>
+      <div className="overflow-hidden rounded-3xl bg-white shadow-float">
+        {/* Header — minimal, no macOS dots */}
+        <div className="flex items-center justify-between border-b border-black/[0.05] px-6 py-4">
+          <span className="text-[13px] font-semibold tracking-tight text-foreground">Cinéfilo</span>
           <button
             onClick={onNewSearch}
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-muted-foreground transition-smooth hover:bg-muted hover:text-foreground"
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium text-muted-foreground/60 transition-all hover:text-foreground"
           >
             <RefreshCw className="h-3 w-3" />
             Nueva búsqueda
@@ -600,8 +573,8 @@ function ChatScreen({
         </div>
 
         {/* Messages */}
-        <div className="max-h-[65vh] overflow-y-auto px-5 py-5">
-          <div className="space-y-5">
+        <div className="max-h-[62vh] overflow-y-auto px-6 py-6">
+          <div className="space-y-6">
             {messages.map((msg) =>
               msg.role === "user" ? (
                 <UserBubble key={msg.id} text={msg.text} />
@@ -619,9 +592,12 @@ function ChatScreen({
             )}
 
             {isLoading && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground animate-fade-in">
-                <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                Buscando algo perfecto…
+              <div className="flex items-center gap-2 animate-fade-in">
+                <div className="flex gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30 [animation:bounce_1.2s_ease-in-out_0s_infinite]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30 [animation:bounce_1.2s_ease-in-out_0.2s_infinite]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30 [animation:bounce_1.2s_ease-in-out_0.4s_infinite]" />
+                </div>
               </div>
             )}
           </div>
@@ -629,8 +605,8 @@ function ChatScreen({
         </div>
       </div>
 
-      {/* Input bar */}
-      <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-card">
+      {/* Input bar — Apple Messages style */}
+      <div className="mt-3 overflow-hidden rounded-2xl bg-white shadow-card">
         <textarea
           ref={inputRef}
           value={inputText}
@@ -640,27 +616,27 @@ function ChatScreen({
           }}
           rows={1}
           placeholder="Seguí afinando… algo más rápido, sin gore, solo Prime…"
-          className="w-full resize-none bg-transparent px-5 pb-2 pt-4 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
+          className="w-full resize-none bg-transparent px-5 pb-2 pt-4 text-[13px] text-foreground placeholder:text-muted-foreground/30 focus:outline-none"
           style={{ maxHeight: "100px" }}
         />
-        <div className="flex items-center justify-between border-t border-border px-4 py-2">
+        <div className="flex items-center justify-between px-4 py-2.5">
           <MicButton
             onTranscript={(t, isFinal) => {
               if (!t || !isFinal) return;
               onInputChange(inputText ? `${inputText.trim()} ${t}` : t);
               inputRef.current?.focus();
             }}
-            className="text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground/40 hover:text-muted-foreground"
           />
           <button
             type="button"
             onClick={handleSubmit}
             disabled={inputText.trim().length < 2 || isLoading}
             className={cn(
-              "inline-flex h-8 w-8 items-center justify-center rounded-full transition-smooth",
+              "inline-flex h-7 w-7 items-center justify-center rounded-full transition-all",
               inputText.trim().length >= 2 && !isLoading
-                ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                : "bg-muted text-muted-foreground/40 cursor-not-allowed",
+                ? "bg-foreground text-background hover:opacity-75"
+                : "bg-muted text-muted-foreground/25 cursor-not-allowed",
             )}
             aria-label="Enviar"
           >
@@ -670,8 +646,8 @@ function ChatScreen({
       </div>
 
       {isGuest && (
-        <p className="mt-3 text-center text-xs text-muted-foreground">
-          ¿Querés guardar tu historial?{" "}
+        <p className="mt-4 text-center text-[11px] text-muted-foreground/60">
+          ¿Querés que recuerde tus gustos?{" "}
           <Link to="/login" className="font-semibold text-primary hover:underline">
             Crear cuenta gratis →
           </Link>
@@ -686,8 +662,8 @@ function ChatScreen({
 function UserBubble({ text }: { text: string }) {
   return (
     <div className="flex justify-end">
-      <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-foreground px-4 py-3">
-        <p className="text-sm leading-relaxed text-background">{text}</p>
+      <div className="max-w-[78%] rounded-[20px] rounded-tr-md bg-foreground px-4 py-2.5">
+        <p className="text-[13px] leading-relaxed text-white">{text}</p>
       </div>
     </div>
   );
@@ -712,26 +688,19 @@ function AssistantBubble({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Main recommendation — WhatsApp-style visual card */}
-      <div className="max-w-[90%] overflow-hidden rounded-2xl rounded-tl-sm border border-border bg-white shadow-sm">
+      {/* Main recommendation card — Apple-style, shadow only */}
+      <div className="max-w-[92%] overflow-hidden rounded-2xl rounded-tl-[4px] bg-white shadow-card">
         <div className="flex">
-          {/* Poster / color block */}
+          {/* Poster */}
           <div
-            className="relative h-[170px] w-[113px] shrink-0 overflow-hidden"
-            style={!mainPoster ? { background: `${colorForPlatform(main.platform)}18` } : undefined}
+            className="relative h-[172px] w-[115px] shrink-0 overflow-hidden"
+            style={!mainPoster ? { background: `${colorForPlatform(main.platform)}12` } : undefined}
           >
             {mainPoster ? (
-              <img
-                src={mainPoster}
-                alt={main.title}
-                className="h-full w-full object-cover"
-              />
+              <img src={mainPoster} alt={main.title} className="h-full w-full object-cover" />
             ) : (
-              <div className="flex h-full w-full flex-col items-center justify-center gap-1 px-2">
-                <span
-                  className="text-2xl font-black opacity-20"
-                  style={{ color: colorForPlatform(main.platform) }}
-                >
+              <div className="flex h-full w-full items-center justify-center">
+                <span className="text-3xl font-black opacity-[0.12]" style={{ color: colorForPlatform(main.platform) }}>
                   {main.title.charAt(0)}
                 </span>
               </div>
@@ -741,45 +710,31 @@ function AssistantBubble({
           {/* Content */}
           <div className="flex flex-1 flex-col justify-between p-4">
             <div>
-              {/* Platform badge */}
-              <div className="mb-2 flex items-center gap-1.5">
-                <span
-                  className="h-2 w-2 rounded-full"
-                  style={{ background: colorForPlatform(main.platform) }}
-                />
-                <span
-                  className="text-[11px] font-semibold"
-                  style={{ color: colorForPlatform(main.platform) }}
-                >
+              <div className="mb-2 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5" style={{ background: `${colorForPlatform(main.platform)}14` }}>
+                <span className="h-1.5 w-1.5 rounded-full" style={{ background: colorForPlatform(main.platform) }} />
+                <span className="text-[10px] font-semibold" style={{ color: colorForPlatform(main.platform) }}>
                   {main.platform}
                 </span>
               </div>
-
-              <h3 className="text-sm font-bold leading-tight text-foreground">{main.title}</h3>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
-                {main.duration} · {main.type}
-              </p>
-              <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-foreground/70">
-                {main.reason}
-              </p>
+              <h3 className="text-[14px] font-bold leading-tight tracking-tight text-foreground">{main.title}</h3>
+              <p className="mt-0.5 text-[11px] text-muted-foreground/70">{main.duration} · {main.type}</p>
+              <p className="mt-2 line-clamp-3 text-[11px] leading-relaxed text-foreground/60">{main.reason}</p>
             </div>
-
             <a
               href={deepLinkFor(main.platform, main.title)}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-3 inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold text-white transition-opacity hover:opacity-90"
+              className="mt-3 inline-flex w-fit items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-semibold text-white transition-opacity hover:opacity-85"
               style={{ background: colorForPlatform(main.platform) }}
             >
-              <ExternalLink className="h-3 w-3" />
+              <ExternalLink className="h-2.5 w-2.5" />
               Ver en {main.platform}
             </a>
           </div>
         </div>
 
-        {/* Feedback */}
         {!isGuest && (
-          <div className="border-t border-border/60 px-4 py-2.5">
+          <div className="border-t border-black/[0.04] px-3 py-2">
             <FeedbackRow
               feedback={mainFeedback}
               onLove={() => onFeedback(main.title, main.platform, "love")}
@@ -792,11 +747,11 @@ function AssistantBubble({
         )}
       </div>
 
-      {/* Alternatives — horizontal scroll carousel */}
+      {/* Alternatives carousel */}
       {alternatives.length > 0 && (
-        <div className="max-w-[90%]">
-          <p className="mb-2 text-[11px] text-muted-foreground">También podría ser…</p>
-          <div className="flex gap-2.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+        <div className="max-w-[92%]">
+          <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/40">También podría ser</p>
+          <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
             {alternatives.map((alt, i) => {
               const altPoster = posters[alt.title];
               const altFeedback = msg.feedbackGiven?.[alt.title] ?? null;
@@ -804,52 +759,31 @@ function AssistantBubble({
                 <div
                   key={alt.title}
                   className={cn(
-                    "flex-none w-[130px] overflow-hidden rounded-xl border border-border bg-white shadow-sm",
+                    "flex-none w-[124px] overflow-hidden rounded-xl bg-white shadow-card",
                     i >= 2 && "hidden sm:flex sm:flex-col",
                   )}
                 >
-                  {/* Mini poster or platform color block */}
-                  <div
-                    className="h-[80px] overflow-hidden"
-                    style={!altPoster ? { background: `${colorForPlatform(alt.platform)}15` } : undefined}
-                  >
+                  <div className="h-[78px] overflow-hidden" style={!altPoster ? { background: `${colorForPlatform(alt.platform)}10` } : undefined}>
                     {altPoster ? (
-                      <img
-                        src={altPoster}
-                        alt={alt.title}
-                        className="h-full w-full object-cover"
-                      />
+                      <img src={altPoster} alt={alt.title} className="h-full w-full object-cover" />
                     ) : (
                       <div className="flex h-full items-center justify-center">
-                        <span
-                          className="text-xs font-black opacity-25"
-                          style={{ color: colorForPlatform(alt.platform) }}
-                        >
+                        <span className="text-sm font-black opacity-[0.12]" style={{ color: colorForPlatform(alt.platform) }}>
                           {alt.title.charAt(0)}
                         </span>
                       </div>
                     )}
                   </div>
 
-                  <div className="p-2.5">
-                    <p className="line-clamp-2 text-[11px] font-semibold leading-tight text-foreground">
-                      {alt.title}
-                    </p>
+                  <div className="p-2">
+                    <p className="line-clamp-2 text-[11px] font-semibold leading-tight tracking-tight text-foreground">{alt.title}</p>
                     <div className="mt-1 flex items-center gap-1">
-                      <span
-                        className="h-1.5 w-1.5 rounded-full"
-                        style={{ background: colorForPlatform(alt.platform) }}
-                      />
-                      <span className="text-[10px] text-muted-foreground">{alt.platform}</span>
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: colorForPlatform(alt.platform) }} />
+                      <span className="text-[10px] text-muted-foreground/60">{alt.platform}</span>
                     </div>
-
-                    <div className="mt-2 flex items-center justify-between">
-                      <a
-                        href={deepLinkFor(alt.platform, alt.title)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[10px] text-muted-foreground hover:text-foreground"
-                      >
+                    <div className="mt-1.5 flex items-center justify-between">
+                      <a href={deepLinkFor(alt.platform, alt.title)} target="_blank" rel="noopener noreferrer"
+                        className="text-[10px] text-muted-foreground/50 transition-colors hover:text-foreground">
                         Ver →
                       </a>
                       {!isGuest && (

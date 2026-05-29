@@ -125,7 +125,7 @@ export function VoiceOrb({
       <span
         aria-hidden="true"
         className="absolute inset-[6px] rounded-full"
-        style={{ background: "oklch(0.975 0.005 270)" }}
+        style={{ background: "oklch(0.986 0.002 275)" }}
       />
 
       {/* Center sphere */}
