@@ -622,9 +622,14 @@ function ChatScreen({
         <div className="flex items-center justify-between px-4 py-2.5">
           <MicButton
             onTranscript={(t, isFinal) => {
-              if (!t || !isFinal) return;
-              onInputChange(inputText ? `${inputText.trim()} ${t}` : t);
-              inputRef.current?.focus();
+              if (!t) return;
+              if (isFinal) {
+                const combined = inputText ? `${inputText.trim()} ${t}` : t;
+                onInputChange("");
+                onSubmit(combined.trim());
+              } else {
+                onInputChange(t);
+              }
             }}
             className="text-muted-foreground/40 hover:text-muted-foreground"
           />
