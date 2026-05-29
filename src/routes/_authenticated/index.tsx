@@ -7,10 +7,10 @@ import {
   ThumbsUp,
   ThumbsDown,
   Heart,
-  EyeOff,
+  Eye,
+  Bookmark,
   RefreshCw,
   ExternalLink,
-  AlertTriangle,
   MapPin,
 } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
@@ -50,13 +50,24 @@ export const Route = createFileRoute("/_authenticated/")({
   component: HomePage,
 });
 
+type FeedbackSentiment = "love" | "like" | "dislike" | "seen" | "watchlist";
+
 type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   text: string;
   data?: RecommendationsResult;
-  feedbackGiven?: Record<string, "love" | "like" | "dislike" | "seen">;
+  feedbackGiven?: Record<string, FeedbackSentiment>;
 };
+
+const WATCHLIST_KEY = "cinefilo:watchlist";
+function addToWatchlist(title: string) {
+  try {
+    const raw = localStorage.getItem(WATCHLIST_KEY);
+    const list: string[] = raw ? JSON.parse(raw) : [];
+    if (!list.includes(title)) localStorage.setItem(WATCHLIST_KEY, JSON.stringify([...list, title]));
+  } catch { /* noop */ }
+}
 
 const GUEST_PLATFORMS_KEY = "queveo:guest:default_platforms";
 
@@ -235,7 +246,7 @@ function HomePage() {
     msgId: string,
     title: string,
     platform: string,
-    sentiment: "love" | "like" | "dislike" | "seen",
+    sentiment: FeedbackSentiment,
   ) => {
     setMessages((prev) =>
       prev.map((m) =>
@@ -244,6 +255,11 @@ function HomePage() {
           : m,
       ),
     );
+    if (sentiment === "watchlist") {
+      addToWatchlist(title);
+      toast.success(`"${title}" guardado para ver después`, { duration: 2000 });
+      return;
+    }
     void recordTitleFeedback({ data: { title, platform, sentiment } }).catch(() => {});
     if (sentiment === "dislike" || sentiment === "seen") {
       setExcluded((prev) => (prev.includes(title) ? prev : [...prev, title]));
@@ -548,7 +564,7 @@ function ChatScreen({
   posters: Record<string, string | null>;
   onInputChange: (v: string) => void;
   onSubmit: (text: string) => void;
-  onFeedback: (msgId: string, title: string, platform: string, sentiment: "love" | "like" | "dislike" | "seen") => void;
+  onFeedback: (msgId: string, title: string, platform: string, sentiment: FeedbackSentiment) => void;
   onNewSearch: () => void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
@@ -686,7 +702,7 @@ function AssistantBubble({
   msg: ChatMessage;
   isGuest: boolean;
   posters: Record<string, string | null>;
-  onFeedback: (title: string, platform: string, sentiment: "love" | "like" | "dislike" | "seen") => void;
+  onFeedback: (title: string, platform: string, sentiment: FeedbackSentiment) => void;
 }) {
   const { data } = msg;
   if (!data) return null;
@@ -768,8 +784,9 @@ function AssistantBubble({
               feedback={mainFeedback}
               onLove={() => onFeedback(main.title, main.platform, "love")}
               onLike={() => onFeedback(main.title, main.platform, "like")}
-              onDislike={() => onFeedback(main.title, main.platform, "dislike")}
+              onWatchlist={() => onFeedback(main.title, main.platform, "watchlist")}
               onSeen={() => onFeedback(main.title, main.platform, "seen")}
+              onDislike={() => onFeedback(main.title, main.platform, "dislike")}
             />
           </div>
         )}
@@ -838,9 +855,9 @@ function AssistantBubble({
                       {!isGuest && (
                         <CompactFeedback
                           feedback={altFeedback}
-                          onLike={() => onFeedback(alt.title, alt.platform, "like")}
-                          onDislike={() => onFeedback(alt.title, alt.platform, "dislike")}
+                          onWatchlist={() => onFeedback(alt.title, alt.platform, "watchlist")}
                           onSeen={() => onFeedback(alt.title, alt.platform, "seen")}
+                          onDislike={() => onFeedback(alt.title, alt.platform, "dislike")}
                         />
                       )}
                     </div>
@@ -857,53 +874,74 @@ function AssistantBubble({
 
 /* ===================== FEEDBACK ===================== */
 
-function FeedbackRow({ feedback, onLove, onLike, onDislike, onSeen }: {
-  feedback: "love" | "like" | "dislike" | "seen" | null;
-  onLove: () => void; onLike: () => void; onDislike: () => void; onSeen: () => void;
+const FEEDBACK_ACTIONS = [
+  { key: "love",      label: "Me encanta",       Icon: Heart,      active: "text-pink-500",       hover: "hover:bg-pink-50 hover:text-pink-500" },
+  { key: "like",      label: "Me gusta",          Icon: ThumbsUp,   active: "text-primary",        hover: "hover:bg-primary/8 hover:text-primary" },
+  { key: "watchlist", label: "Ver en otro momento", Icon: Bookmark, active: "text-amber-500",      hover: "hover:bg-amber-50 hover:text-amber-500" },
+  { key: "seen",      label: "Ya la vi",          Icon: Eye,        active: "text-muted-foreground", hover: "hover:bg-muted hover:text-foreground" },
+  { key: "dislike",   label: "No me gusta",       Icon: ThumbsDown, active: "text-destructive",    hover: "hover:bg-destructive/8 hover:text-destructive" },
+] as const;
+
+function FeedbackRow({ feedback, onLove, onLike, onWatchlist, onSeen, onDislike }: {
+  feedback: FeedbackSentiment | null;
+  onLove: () => void; onLike: () => void; onWatchlist: () => void; onSeen: () => void; onDislike: () => void;
 }) {
-  if (feedback === "love") return (
-    <div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
-      <Heart className="h-3.5 w-3.5 fill-current" />¡Te encanta! Lo recordamos.
-    </div>
-  );
-  if (feedback === "like") return (
-    <div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
-      <ThumbsUp className="h-3.5 w-3.5" />Te gusta. Lo recordamos.
-    </div>
-  );
-  if (feedback === "dislike" || feedback === "seen") return (
-    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-      <AlertTriangle className="h-3.5 w-3.5" />
-      {feedback === "seen" ? "Marcado como ya vista." : "Descartado."}
-    </div>
-  );
+  const handlers: Record<string, () => void> = { love: onLove, like: onLike, watchlist: onWatchlist, seen: onSeen, dislike: onDislike };
+
+  if (feedback) {
+    const match = FEEDBACK_ACTIONS.find((a) => a.key === feedback);
+    if (match) {
+      const { Icon, label, active } = match;
+      return (
+        <div className={cn("flex items-center gap-1.5 text-xs font-medium", active)}>
+          <Icon className="h-3.5 w-3.5" />
+          {label}
+        </div>
+      );
+    }
+  }
+
   return (
-    <div className="flex items-center gap-3">
-      {([
-        { label: "Amo", icon: Heart, action: onLove, hover: "hover:text-primary" },
-        { label: "Va", icon: ThumbsUp, action: onLike, hover: "hover:text-primary" },
-        { label: "No", icon: ThumbsDown, action: onDislike, hover: "hover:text-destructive" },
-        { label: "Ya la vi", icon: EyeOff, action: onSeen, hover: "hover:text-foreground" },
-      ] as const).map(({ label, icon: Icon, action, hover }) => (
-        <button key={label} onClick={action}
-          className={cn("group flex items-center gap-1 text-xs text-muted-foreground transition-colors", hover)}>
-          <Icon className="h-3.5 w-3.5" />{label}
+    <div className="flex items-center gap-0.5">
+      {FEEDBACK_ACTIONS.map(({ key, label, Icon, hover }) => (
+        <button
+          key={key}
+          onClick={handlers[key]}
+          title={label}
+          className={cn(
+            "flex flex-col items-center gap-0.5 rounded-xl px-2 py-1.5 text-muted-foreground/60 transition-colors",
+            hover,
+          )}
+        >
+          <Icon className="h-4 w-4" />
+          <span className="text-[9px] leading-none">{label.split(" ")[0]}</span>
         </button>
       ))}
     </div>
   );
 }
 
-function CompactFeedback({ feedback, onLike, onDislike, onSeen }: {
-  feedback: "love" | "like" | "dislike" | "seen" | null;
-  onLike: () => void; onDislike: () => void; onSeen: () => void;
+function CompactFeedback({ feedback, onWatchlist, onSeen, onDislike }: {
+  feedback: FeedbackSentiment | null;
+  onWatchlist: () => void; onSeen: () => void; onDislike: () => void;
 }) {
-  if (feedback) return <span className="text-[11px] text-muted-foreground">{feedback === "like" || feedback === "love" ? "✓" : "✗"}</span>;
+  if (feedback) {
+    const match = FEEDBACK_ACTIONS.find((a) => a.key === feedback);
+    return <span className={cn("text-[10px]", match?.active ?? "text-muted-foreground")}>{
+      feedback === "like" || feedback === "love" || feedback === "watchlist" ? "✓" : "✗"
+    }</span>;
+  }
   return (
-    <div className="flex items-center gap-1.5">
-      <button onClick={onLike} className="text-muted-foreground hover:text-primary" title="Me gusta"><ThumbsUp className="h-3 w-3" /></button>
-      <button onClick={onDislike} className="text-muted-foreground hover:text-destructive" title="No me gusta"><ThumbsDown className="h-3 w-3" /></button>
-      <button onClick={onSeen} className="text-muted-foreground hover:text-foreground" title="Ya la vi"><EyeOff className="h-3 w-3" /></button>
+    <div className="flex items-center gap-1">
+      <button onClick={onWatchlist} title="Ver en otro momento" className="rounded p-0.5 text-muted-foreground/50 transition-colors hover:bg-amber-50 hover:text-amber-500">
+        <Bookmark className="h-3 w-3" />
+      </button>
+      <button onClick={onSeen} title="Ya la vi" className="rounded p-0.5 text-muted-foreground/50 transition-colors hover:bg-muted hover:text-foreground">
+        <Eye className="h-3 w-3" />
+      </button>
+      <button onClick={onDislike} title="No me gusta" className="rounded p-0.5 text-muted-foreground/50 transition-colors hover:bg-destructive/10 hover:text-destructive">
+        <ThumbsDown className="h-3 w-3" />
+      </button>
     </div>
   );
 }
