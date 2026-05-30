@@ -7,7 +7,7 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
-type Mode = "signin" | "signup";
+type Mode = "signin" | "signup" | "forgot";
 
 function LoginPage() {
   const navigate = useNavigate();
@@ -30,14 +30,22 @@ function LoginPage() {
     setInfo(null);
     setLoading(true);
     try {
-      if (mode === "signup") {
+      if (mode === "forgot") {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/reset-password`,
+        });
+        if (error) throw error;
+        setInfo(
+          "Si ese email tiene cuenta, te enviamos un enlace para restablecer la contraseña. Revisá spam.",
+        );
+      } else if (mode === "signup") {
         const { error } = await supabase.auth.signUp({
           email,
           password,
           options: { emailRedirectTo: window.location.origin },
         });
         if (error) throw error;
-        setInfo("Te enviamos un email para confirmar tu cuenta. Revisalo para iniciar sesión.");
+        navigate({ to: "/" });
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -65,12 +73,18 @@ function LoginPage() {
             Cinéfilo
           </div>
           <h1 className="text-3xl font-bold text-foreground">
-            {mode === "signin" ? "Bienvenido de vuelta" : "Guardá tu perfil de gusto"}
+            {mode === "signin"
+              ? "Bienvenido de vuelta"
+              : mode === "forgot"
+                ? "Recuperá tu contraseña"
+                : "Guardá tu perfil de gusto"}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {mode === "signin"
               ? "Ingresá para recuperar tus preferencias y plataformas."
-              : "Para que las recomendaciones se vuelvan tuyas. Sin emails de marketing, sin compartir datos."}
+              : mode === "forgot"
+                ? "Ingresá tu email y te mandamos un enlace para crear una nueva."
+                : "Para que las recomendaciones se vuelvan tuyas. Sin emails de marketing, sin compartir datos."}
           </p>
         </div>
 
@@ -78,15 +92,24 @@ function LoginPage() {
           <ul className="mb-6 space-y-2.5 rounded-2xl border border-border/60 bg-card/40 p-4">
             <li className="flex items-start gap-2.5 text-xs text-muted-foreground">
               <Heart className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-              <span><span className="font-medium text-foreground">Aprende qué te gusta</span> — cada 👍 ❤️ afina las recos.</span>
+              <span>
+                <span className="font-medium text-foreground">Aprende qué te gusta</span> — cada 👍
+                ❤️ afina las recos.
+              </span>
             </li>
             <li className="flex items-start gap-2.5 text-xs text-muted-foreground">
               <Bookmark className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-              <span><span className="font-medium text-foreground">Sincroniza tus Momentos</span> en cualquier dispositivo.</span>
+              <span>
+                <span className="font-medium text-foreground">Sincroniza tus Momentos</span> en
+                cualquier dispositivo.
+              </span>
             </li>
             <li className="flex items-start gap-2.5 text-xs text-muted-foreground">
               <TrendingUp className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-              <span><span className="font-medium text-foreground">Mejora con cada uso</span> — patrones y horarios tuyos.</span>
+              <span>
+                <span className="font-medium text-foreground">Mejora con cada uso</span> — patrones
+                y horarios tuyos.
+              </span>
             </li>
           </ul>
         )}
@@ -100,22 +123,43 @@ function LoginPage() {
             placeholder="tu@email.com"
             className="min-h-[52px] w-full rounded-2xl border border-border bg-card px-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
           />
-          <input
-            type="password"
-            required
-            minLength={6}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Contraseña (mín. 6)"
-            className="min-h-[52px] w-full rounded-2xl border border-border bg-card px-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
-          />
+          {mode !== "forgot" && (
+            <input
+              type="password"
+              required
+              minLength={6}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Contraseña (mín. 6)"
+              className="min-h-[52px] w-full rounded-2xl border border-border bg-card px-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+            />
+          )}
+          {mode === "signin" && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("forgot");
+                  setError(null);
+                  setInfo(null);
+                }}
+                className="text-xs font-medium text-muted-foreground hover:text-primary"
+              >
+                ¿Olvidaste tu contraseña?
+              </button>
+            </div>
+          )}
           <button
             type="submit"
             disabled={loading}
             className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-gradient-primary px-6 text-sm font-semibold text-primary-foreground shadow-primary transition-smooth active:scale-[0.98] disabled:opacity-50"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {mode === "signin" ? "Iniciar sesión" : "Crear cuenta"}
+            {mode === "signin"
+              ? "Iniciar sesión"
+              : mode === "forgot"
+                ? "Enviar enlace"
+                : "Crear cuenta"}
           </button>
         </form>
 
@@ -130,37 +174,53 @@ function LoginPage() {
           </div>
         )}
 
-        <p className="mt-6 text-center text-sm text-muted-foreground">
-          {mode === "signin" ? "¿No tenés cuenta?" : "¿Ya tenés cuenta?"}{" "}
-          <button
-            onClick={() => {
-              setMode(mode === "signin" ? "signup" : "signin");
-              setError(null);
-              setInfo(null);
-            }}
-            className="font-semibold text-primary hover:underline"
-          >
-            {mode === "signin" ? "Crear una" : "Ingresá"}
-          </button>
-        </p>
+        {mode === "forgot" ? (
+          <p className="mt-6 text-center text-sm text-muted-foreground">
+            <button
+              onClick={() => {
+                setMode("signin");
+                setError(null);
+                setInfo(null);
+              }}
+              className="font-semibold text-primary hover:underline"
+            >
+              Volver a iniciar sesión
+            </button>
+          </p>
+        ) : (
+          <>
+            <p className="mt-6 text-center text-sm text-muted-foreground">
+              {mode === "signin" ? "¿No tenés cuenta?" : "¿Ya tenés cuenta?"}{" "}
+              <button
+                onClick={() => {
+                  setMode(mode === "signin" ? "signup" : "signin");
+                  setError(null);
+                  setInfo(null);
+                }}
+                className="font-semibold text-primary hover:underline"
+              >
+                {mode === "signin" ? "Crear una" : "Ingresá"}
+              </button>
+            </p>
 
-        <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
-          <div className="h-px flex-1 bg-border" />
-          o
-          <div className="h-px flex-1 bg-border" />
-        </div>
+            <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
+              <div className="h-px flex-1 bg-border" />
+              o
+              <div className="h-px flex-1 bg-border" />
+            </div>
 
-        <button
-          onClick={() => navigate({ to: "/" })}
-          className="flex min-h-[48px] w-full items-center justify-center rounded-2xl border border-dashed border-border bg-transparent px-6 text-sm font-medium text-muted-foreground transition-smooth hover:border-primary hover:text-primary"
-        >
-          Seguir como invitado
-        </button>
-        <p className="mt-2 text-center text-[11px] text-muted-foreground">
-          Podés crear tu cuenta más tarde si querés.
-        </p>
+            <button
+              onClick={() => navigate({ to: "/" })}
+              className="flex min-h-[48px] w-full items-center justify-center rounded-2xl border border-dashed border-border bg-transparent px-6 text-sm font-medium text-muted-foreground transition-smooth hover:border-primary hover:text-primary"
+            >
+              Seguir como invitado
+            </button>
+            <p className="mt-2 text-center text-[11px] text-muted-foreground">
+              Podés crear tu cuenta más tarde si querés.
+            </p>
+          </>
+        )}
       </div>
     </main>
   );
 }
-
