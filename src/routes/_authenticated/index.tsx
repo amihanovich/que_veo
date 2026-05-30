@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Loader2,
@@ -12,6 +12,7 @@ import {
   RefreshCw,
   ExternalLink,
   MapPin,
+  RotateCcw,
 } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
@@ -36,6 +37,8 @@ import {
   dismissLoginNudge,
 } from "@/lib/guestSeed";
 import { inferContext, contextToPromptHint, seasonHintShort } from "@/lib/context";
+import { getContextualSuggestions } from "@/lib/suggestions";
+import { readRecentSearches, pushRecentSearch, clearRecentSearches } from "@/lib/recentSearches";
 import {
   getWeatherSnapshot,
   isWeatherEnabled,
@@ -68,6 +71,16 @@ function addToWatchlist(title: string) {
     const list: string[] = raw ? JSON.parse(raw) : [];
     if (!list.includes(title)) localStorage.setItem(WATCHLIST_KEY, JSON.stringify([...list, title]));
   } catch { /* noop */ }
+}
+function readWatchlist(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(WATCHLIST_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list.filter((t): t is string => typeof t === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 const GUEST_PLATFORMS_KEY = "queveo:guest:default_platforms";
@@ -172,6 +185,9 @@ function HomePage() {
     if (trimmed.length < 2) return;
 
     const isFirstMessage = step === "home";
+    // Guardamos solo la frase que inicia una búsqueda nueva (desde la home),
+    // no cada turno de refinamiento del chat.
+    if (isFirstMessage) pushRecentSearch(trimmed);
     const userMsg: ChatMessage = { id: uid(), role: "user", text: trimmed };
     const nextMessages = [...messages, userMsg];
 
@@ -354,6 +370,14 @@ function HomeScreen({
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Sugerencias contextuales (momento + clima) y recientes desde localStorage.
+  const suggestions = useMemo(
+    () => getContextualSuggestions(inferContext(), weather, 4),
+    [weather],
+  );
+  const [recent, setRecent] = useState<string[]>(() => readRecentSearches());
+  const [watchlist] = useState<string[]>(() => readWatchlist());
+
   const handleSubmit = () => {
     if (text.trim().length >= 2) onSubmit(text.trim());
   };
@@ -510,6 +534,78 @@ function HomeScreen({
             </button>
           </div>
         </div>
+
+        {/* Sugerencias contextuales — tarjetas tap-to-search */}
+        {suggestions.length > 0 && (
+          <div className="mt-7 w-full">
+            <div className="flex flex-wrap justify-center gap-2">
+              {suggestions.map((s) => (
+                <button
+                  key={s.label}
+                  onClick={() => onSubmit(s.query)}
+                  disabled={isLoading}
+                  className="rounded-full border border-black/[0.06] bg-white px-3 py-1.5 text-[12px] font-medium text-foreground/75 shadow-xs transition-all hover:text-foreground hover:shadow-card disabled:opacity-50"
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Tus últimas búsquedas — reclickeables */}
+        {recent.length > 0 && (
+          <div className="mt-6 w-full text-left">
+            <div className="mb-2 flex items-center justify-between px-1">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/40">
+                Tus últimas búsquedas
+              </span>
+              <button
+                onClick={() => { clearRecentSearches(); setRecent([]); }}
+                className="text-[10px] text-muted-foreground/40 transition-colors hover:text-foreground"
+              >
+                Limpiar
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {recent.map((q) => (
+                <button
+                  key={q}
+                  onClick={() => onSubmit(q)}
+                  disabled={isLoading}
+                  className="inline-flex items-center gap-1 rounded-full bg-black/[0.03] px-2.5 py-1 text-[11px] text-muted-foreground/80 transition-colors hover:bg-black/[0.06] hover:text-foreground disabled:opacity-50"
+                >
+                  <RotateCcw className="h-3 w-3 opacity-50" />
+                  <span className="max-w-[160px] truncate">{q}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Tu lista para ver — watchlist guardada */}
+        {watchlist.length > 0 && (
+          <div className="mt-5 w-full text-left">
+            <div className="mb-2 px-1">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/40">
+                Tu lista para ver
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {watchlist.slice(0, 8).map((title) => (
+                <button
+                  key={title}
+                  onClick={() => onSubmit(`contame más sobre ${title} y algo parecido`)}
+                  disabled={isLoading}
+                  className="inline-flex items-center gap-1 rounded-full bg-black/[0.03] px-2.5 py-1 text-[11px] text-muted-foreground/80 transition-colors hover:bg-black/[0.06] hover:text-foreground disabled:opacity-50"
+                >
+                  <Bookmark className="h-3 w-3 opacity-50" />
+                  <span className="max-w-[160px] truncate">{title}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Poster marquee — mood board at bottom, very subtle */}
